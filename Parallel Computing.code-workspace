@@ -8,5 +8,95 @@
             "path": "./exercise-1",
         }
     ],
-    "settings": {}
+    "settings": {
+        "files.associations": {
+            "*.ipp": "c",
+            "any": "c",
+            "array": "c",
+            "hash_map": "c",
+            "hash_set": "c",
+            "*.tcc": "c",
+            "concepts": "c",
+            "deque": "c",
+            "forward_list": "c",
+            "list": "c",
+            "string": "c",
+            "unordered_map": "c",
+            "unordered_set": "c",
+            "vector": "c",
+            "memory": "c",
+            "optional": "c",
+            "string_view": "c",
+            "fstream": "c",
+            "future": "c",
+            "istream": "c",
+            "ostream": "c",
+            "shared_mutex": "c",
+            "sstream": "c",
+            "stop_token": "c",
+            "streambuf": "c",
+            "thread": "c",
+            "functional": "c",
+            "tuple": "c",
+            "type_traits": "c",
+            "utility": "c",
+            "valarray": "c",
+            "variant": "c",
+            "__bit_reference": "c",
+            "__debug": "c",
+            "__hash_table": "c",
+            "__mutex_base": "c",
+            "__node_handle": "c",
+            "__split_buffer": "c",
+            "__tree": "c",
+            "exception": "c",
+            "filesystem": "c",
+            "ios": "c",
+            "iterator": "c",
+            "map": "c",
+            "mutex": "c",
+            "queue": "c",
+            "set": "c",
+            "stack": "c",
+            "strstream": "c"
+        }
+    },
+    "launch": {
+        "version": "0.2.0",
+        "configurations": [
+            {
+                "type": "lldb",
+                "request": "launch",
+                "name": "Launch Exercise 1",
+                "program": "${workspaceFolder:exercise-1}/heat",
+                "args": [
+                    "-n", "100",
+                    "-i", "100000",
+                    "-s", "5000",
+                ],
+                "cwd": "${workspaceFolder:exercise-1}",
+                "preLaunchTask": "make",
+            }
+        ],
+        "compounds": []
+    },
+    "tasks": {
+        "version": "2.0.0",
+        "tasks": [
+            {
+                "label": "make",
+                "command": "make",
+                "type": "shell",
+                "args": [],
+                "presentation": {
+                    "reveal": "always"
+                },
+                "group": "build",
+                "icon": {},
+                "options": {
+                    "cwd": "${fileWorkspaceFolder}"
+                }
+            }
+        ]
+    }
 }

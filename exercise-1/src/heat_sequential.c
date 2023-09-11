@@ -16,6 +16,8 @@
 //         It currently only gives the value of a.
 #define MAX(a,b) (a)
 
+#define TEMP_ARRAY_LENGTH 3
+
 typedef int64_t int_t;
 typedef double real_t;
 
@@ -40,7 +42,7 @@ real_t
     // TODO 2: Allocate memory for the temperature values.
     //         The global array temp should contain 3 pointers to heap-allocated memory
     //         with enough space for N real_t elements.
-    *temp[3] = { NULL, NULL, NULL };    // Buffers for temperature values
+    *temp[TEMP_ARRAY_LENGTH] = { NULL, NULL, NULL };    // Buffers for temperature values
 
 /* Indexing macros for the temperature value buffers */
 #define T(i)        temp[0][(i)]
@@ -69,7 +71,9 @@ void
 swap ( real_t** m1, real_t** m2 )
 {
     // TODO 3: Implement the swap function to swap the content of two variables.
-
+    real_t m3 = **m1;
+    **m1 = **m2;
+    **m2 = m3;
 }
 
 
@@ -85,7 +89,9 @@ main ( int argc, char** argv )
 
     // TODO 1: Get N, max_iteration, snapshot_frequency from the options struct
     //         and store the values in the global fields with the same names.
-
+    N = options->N;
+    max_iteration = options->max_iteration;
+    snapshot_frequency = options->snapshot_frequency;
 
     if (options->solver_type == 1) {
         time_step = &time_step_jacobi;
@@ -94,7 +100,7 @@ main ( int argc, char** argv )
     } else {
         time_step = &time_step_red_black_gauss_seidel;
     }
-
+    printf("%s\n", "test");
     domain_init ();
 
     int_t total_iteration_count = 0;
@@ -284,7 +290,9 @@ domain_init ( void )
     // TODO 2: Allocate memory for the temperature values.
     //         The global array temp should contain 3 pointers to heap-allocated memory
     //         with enough space for N real_t elements.
-
+    for (int i = 0; i < TEMP_ARRAY_LENGTH; i++) {
+        temp[i] = malloc(sizeof(real_t) * N);
+    }
 
     for ( int_t i=0; i<N; i++ )
     {
