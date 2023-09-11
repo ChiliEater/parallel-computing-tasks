@@ -1,0 +1,12 @@
+{
+    "folders": [
+        {
+            "path": ".",
+            "name": "Root"
+        },
+        {
+            "path": "./exercise-1",
+        }
+    ],
+    "settings": {}
+}
