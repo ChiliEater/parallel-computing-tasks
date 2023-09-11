@@ -14,7 +14,7 @@
 
 // TODO 4: Implement the macro MAX(a,b) which is used to find the largest value of a and b.
 //         It currently only gives the value of a.
-#define MAX(a,b) (a)
+#define MAX(a,b) (a >= b ? a : b)
 
 #define TEMP_ARRAY_LENGTH 3
 
@@ -71,9 +71,9 @@ void
 swap ( real_t** m1, real_t** m2 )
 {
     // TODO 3: Implement the swap function to swap the content of two variables.
-    real_t m3 = **m1;
-    **m1 = **m2;
-    **m2 = m3;
+    real_t* m3 = *m1;
+    *m1 = *m2;
+    *m2 = m3;
 }
 
 
@@ -100,7 +100,6 @@ main ( int argc, char** argv )
     } else {
         time_step = &time_step_red_black_gauss_seidel;
     }
-    printf("%s\n", "test");
     domain_init ();
 
     int_t total_iteration_count = 0;
@@ -109,6 +108,7 @@ main ( int argc, char** argv )
 
     // TODO 6: Record the execution time of the integration loop
     //         using the structs t_start and t_end declared above.
+    gettimeofday(&t_start, NULL);
 
 
     for ( int_t step=0; step<=max_iteration; step++ )
@@ -132,6 +132,7 @@ main ( int argc, char** argv )
         step = step + 1;
 
     }
+    gettimeofday(&t_end, NULL);
 
     printf ( "Total iteration count: %ld\n", total_iteration_count );
     printf ( "Total elapsed time: %lf seconds\n",
@@ -176,7 +177,7 @@ time_step_jacobi ( void )
         T_prime(N-1) = ( T_prev(N-1) - sigma ) / a_diag;
         max_update = MAX(max_update,fabs( T_prime(N-1) - T(N-1) ));
 
-        swap ( &temp[0], &temp[2] );
+        swap(&temp[0], &temp[2]);
 
         iter = iter + 1;
     } while ( max_update > threshold );
@@ -240,7 +241,6 @@ time_step_red_black_gauss_seidel ( void )
 
     do {
         max_update = 0.0;
-
         // Left boundary: Neumann condition, use 2 copies of the right neighbor
         sigma = 2.0 * a_right * T(1);
         update = ( T_prev(0) - sigma ) / a_diag;
@@ -306,6 +306,9 @@ void
 domain_finalize ( void )
 {
     // TODO 5: Free the heap-allocated memory.
+    for (int i = 0; i < TEMP_ARRAY_LENGTH; i++) {
+        free(temp[i]);
+    }
 
 }
 

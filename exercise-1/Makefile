@@ -10,7 +10,7 @@ PLOTS:=$(PLOTSDIR)*.png
 VIDEO:=$(VIDEODIR)*.mp4
 
 CC=gcc
-CFLAGS+= -std=c11 -O2 -g
+CFLAGS+= -std=c11 -O0 -g
 LDLIBS+= -lm
 
 SRC_FILES:=src/$(PROGNAME)_sequential.c src/argument_utils.c

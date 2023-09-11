@@ -70,13 +70,13 @@
                 "name": "Launch Exercise 1",
                 "program": "${workspaceFolder:exercise-1}/heat",
                 "args": [
-                    "-n", "100",
-                    "-i", "100000",
-                    "-s", "5000",
+                    //"-n", "200",
+                    "-i", "1"
                 ],
                 "cwd": "${workspaceFolder:exercise-1}",
                 "preLaunchTask": "make",
-            }
+                
+            },
         ],
         "compounds": []
     },
