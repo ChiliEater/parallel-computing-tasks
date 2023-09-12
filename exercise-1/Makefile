@@ -32,7 +32,7 @@ setup:
 	cd check && make
 
 run: setup $(EXECUTABLE)
-	./$(EXECUTABLE)
+	./$(EXECUTABLE) -t 3
 
 check: setup purge
 	make heat

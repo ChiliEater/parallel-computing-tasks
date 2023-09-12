@@ -1,6 +1,6 @@
 data/
-plots/
-video/
+*plots/
+*video/
 
 heat
 compare_solutions
