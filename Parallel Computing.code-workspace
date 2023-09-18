@@ -6,8 +6,56 @@
         },
         {
             "path": "./exercise-1",
+        },
+        {
+            "path": "./exercise-2",
         }
     ],
+    "launch": {
+        "version": "0.2.0",
+        "configurations": [
+            {
+                "type": "lldb",
+                "request": "launch",
+                "name": "Launch Exercise 1",
+                "program": "${workspaceFolder:exercise-1}/heat",
+                "args": [
+                    //"-n", "200",
+                    "-i", "1"
+                ],
+                "cwd": "${workspaceFolder:exercise-1}",
+                "preLaunchTask": "make",
+                
+            },
+            {
+                "type": "lldb",
+                "request": "launch",
+                "name": "Launch Exercise 2: Parallel",
+                "program": "${workspaceFolder:exercise-2}/parallel",
+                "args": [
+                    //"-n", "200",
+                    "-i", "1"
+                ],
+                "cwd": "${workspaceFolder:exercise-2}",
+                "preLaunchTask": "make",
+                
+            },
+            {
+                "type": "lldb",
+                "request": "launch",
+                "name": "Launch Exercise 2: Sequential",
+                "program": "${workspaceFolder:exercise-2}/sequential",
+                "args": [
+                    //"-n", "200",
+                    "-i", "1"
+                ],
+                "cwd": "${workspaceFolder:exercise-2}",
+                "preLaunchTask": "make-sequential",
+                
+            },
+        ],
+        "compounds": []
+    },
     "settings": {
         "files.associations": {
             "*.ipp": "c",
@@ -61,25 +109,6 @@
             "strstream": "c"
         }
     },
-    "launch": {
-        "version": "0.2.0",
-        "configurations": [
-            {
-                "type": "lldb",
-                "request": "launch",
-                "name": "Launch Exercise 1",
-                "program": "${workspaceFolder:exercise-1}/heat",
-                "args": [
-                    //"-n", "200",
-                    "-i", "1"
-                ],
-                "cwd": "${workspaceFolder:exercise-1}",
-                "preLaunchTask": "make",
-                
-            },
-        ],
-        "compounds": []
-    },
     "tasks": {
         "version": "2.0.0",
         "tasks": [
@@ -96,7 +125,21 @@
                 "options": {
                     "cwd": "${fileWorkspaceFolder}"
                 }
-            }
+            },
+            {
+                "label": "make-sequential",
+                "command": "make",
+                "type": "shell",
+                "args": ["sequential"],
+                "presentation": {
+                    "reveal": "always"
+                },
+                "group": "build",
+                "icon": {},
+                "options": {
+                    "cwd": "${fileWorkspaceFolder}"
+                }
+            },
         ]
     }
 }
