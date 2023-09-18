@@ -31,10 +31,10 @@
                 "type": "lldb",
                 "request": "launch",
                 "name": "Launch Exercise 2: Parallel",
-                "program": "${workspaceFolder:exercise-2}/parallel",
+                "program": "mpirun",
                 "args": [
-                    //"-n", "200",
-                    "-i", "1"
+                    "-np", "4",
+                    "${workspaceFolder:exercise-2}/parallel",
                 ],
                 "cwd": "${workspaceFolder:exercise-2}",
                 "preLaunchTask": "make",
@@ -46,8 +46,6 @@
                 "name": "Launch Exercise 2: Sequential",
                 "program": "${workspaceFolder:exercise-2}/sequential",
                 "args": [
-                    //"-n", "200",
-                    "-i", "1"
                 ],
                 "cwd": "${workspaceFolder:exercise-2}",
                 "preLaunchTask": "make-sequential",

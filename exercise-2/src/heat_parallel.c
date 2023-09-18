@@ -201,7 +201,7 @@ domain_save ( int_t iteration )
     int_t index = iteration / snapshot_frequency;
     char filename[256];
     memset ( filename, 0, 256*sizeof(char) );
-    sprintf ( filename, "data/%.5ld.bin", index );
+    sprintf ( filename, "check/references/%.5ld.bin", index );
 
     FILE *out = fopen ( filename, "wb" );
     if ( ! out ) {
