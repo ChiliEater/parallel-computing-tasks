@@ -12,7 +12,7 @@ CC:=gcc
 PARALLEL_CC:=mpicc
 CFLAGS+=-std=c11
 CFLAGS+=-O0
-CFLAGS+=-g
+CFLAGS+=-ggdb
 LDLIBS+=-lm
 
 PARALLEL_SRC_FILES:=src/$(PROGNAME)_parallel.c src/argument_utils.c

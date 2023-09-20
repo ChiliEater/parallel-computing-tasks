@@ -104,7 +104,16 @@
             "queue": "c",
             "set": "c",
             "stack": "c",
-            "strstream": "c"
+            "strstream": "c",
+            "charconv": "c",
+            "compare": "c",
+            "random": "c",
+            "limits": "c",
+            "cmath": "c",
+            "__config": "c",
+            "algorithm": "c",
+            "atomic": "c",
+            "complex": "c"
         }
     },
     "tasks": {
