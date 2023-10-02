@@ -9,7 +9,10 @@
         },
         {
             "path": "./exercise-2",
-        }
+        },
+        {
+            "path": "./exercise-3",
+        },
     ],
     "launch": {
         "version": "0.2.0",
@@ -48,6 +51,30 @@
                 "args": [
                 ],
                 "cwd": "${workspaceFolder:exercise-2}",
+                "preLaunchTask": "make-sequential",
+                
+            },
+            {
+                "type": "lldb",
+                "request": "launch",
+                "name": "Launch Exercise 3: Parallel",
+                "program": "mpirun",
+                "args": [
+                    "-np", "4",
+                    "${workspaceFolder:exercise-3}/parallel",
+                ],
+                "cwd": "${workspaceFolder:exercise-3}",
+                "preLaunchTask": "make",
+                
+            },
+            {
+                "type": "lldb",
+                "request": "launch",
+                "name": "Launch Exercise 3: Sequential",
+                "program": "${workspaceFolder:exercise-3}/sequential",
+                "args": [
+                ],
+                "cwd": "${workspaceFolder:exercise-3}",
                 "preLaunchTask": "make-sequential",
                 
             },
