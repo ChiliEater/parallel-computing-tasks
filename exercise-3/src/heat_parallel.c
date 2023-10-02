@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <math.h>
 #include <sys/time.h>
+#include <mpi.h>
 
 #include "../inc/argument_utils.h"
 
@@ -18,7 +19,11 @@ int_t
     M,
     N,
     max_iteration,
-    snapshot_frequency;
+    snapshot_frequency,
+    size,
+    rank;
+
+int location[];
 
 real_t
     *temp[2] = { NULL, NULL },
@@ -28,6 +33,7 @@ real_t
 #define T(x,y)                      temp[0][(y) * (N + 2) + (x)]
 #define T_next(x,y)                 temp[1][((y) * (N + 2) + (x))]
 #define THERMAL_DIFFUSIVITY(x,y)    thermal_diffusivity[(y) * (N + 2) + (x)]
+#define DIMENSIONS 2
 
 void time_step ( void );
 void boundary_condition( void );
@@ -56,17 +62,68 @@ main ( int argc, char **argv )
     // - Parse arguments in the rank 0 processes
     //   and broadcast to other processes
 
-    OPTIONS *options = parse_args( argc, argv );
-    if ( !options )
+    // Initialize MPI
+    MPI_Init(&argc, &argv);
+
+    // Determine dimensions
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    int dimensions[] = {0, 0};
+
+    MPI_Dims_create(
+        size,
+        DIMENSIONS,
+        dimensions
+    );
+
+    // Create communicator
+    MPI_Comm communicator;
+    int_t periods[2] = {0, 0};
+
+    MPI_Cart_create(
+        MPI_COMM_WORLD,
+        DIMENSIONS,
+        dimensions,
+        periods,
+        0,
+        &communicator
+    );
+
+
+    // Initialize rank and position
+    const int_t root = 0;
+    MPI_Comm_rank(communicator, &rank);
+
+    MPI_Cart_coords(
+        communicator,
+        rank,
+        DIMENSIONS,
+        location
+    );
+
+    // Let root parse args
+    if (rank == root)
     {
-        fprintf( stderr, "Argument parsing failed\n" );
-        exit(1);
+        OPTIONS *options = parse_args(argc, argv);
+        if (!options)
+        {
+            fprintf(stderr, "Argument parsing failed\n");
+            exit(1);
+        }
+
+        N = options->N;
+        M = options->M;
+        max_iteration = options->max_iteration;
+        snapshot_frequency = options->snapshot_frequency;
     }
 
-    M = options->M;
-    N = options->N;
-    max_iteration = options->max_iteration;
-    snapshot_frequency = options->snapshot_frequency;
+    // Broadcast results to evereyone else
+    MPI_Bcast(&N, 1, MPI_INT, root, communicator);
+    MPI_Bcast(&M, 1, MPI_INT, root, communicator);
+    MPI_Bcast(&max_iteration, 1, MPI_INT, root, communicator);
+    MPI_Bcast(&snapshot_frequency, 1, MPI_INT, root, communicator);
+
+    printf("%d, %d: %d\n", location[0], location[1], N);
+    MPI_Barrier(communicator);
 
     domain_init();
 
@@ -102,9 +159,9 @@ main ( int argc, char **argv )
             WALLTIME(t_end) - WALLTIME(t_start)
             );
 
-
     domain_finalize();
 
+    MPI_Finalize();
     exit ( EXIT_SUCCESS );
 }
 
