@@ -37,8 +37,10 @@ real_t
 
 #define T(x, y) temp[0][(y) * (local_M + 2) + (x)]
 #define T_next(x, y) temp[1][((y) * (local_M + 2) + (x))]
-#define THERMAL_DIFFUSIVITY(x, y) thermal_diffusivity[(y) * (N + 2) + (x)]
+#define THERMAL_DIFFUSIVITY(x, y) thermal_diffusivity[(y) * (local_N + 2) + (x)]
 #define DIMENSIONS 2
+#define MPI_RANK_FIRST (location[0] == 0 && location[1] == 0)
+#define MPI_RANK_LAST ((location[0] == dimensions[0]) && (location[1] == dimensions[1]))
 
 void time_step(void);
 void boundary_condition(void);
@@ -55,6 +57,7 @@ void swap(real_t **m1, real_t **m2)
     *m2 = tmp;
 }
 
+// Open a log for the current rank
 FILE *open_log()
 {
     char name[] = "rank00.log";
@@ -62,11 +65,13 @@ FILE *open_log()
     return fopen(name, "a");
 }
 
+// Close a log for the current rank
 void close_log(FILE *file)
 {
     fclose(file);
 }
 
+// CLear a log for the current rank via deletion
 void clear_log()
 {
     char name[] = "rank00.log";
@@ -139,8 +144,6 @@ int main(int argc, char **argv)
     MPI_Bcast(&snapshot_frequency, 1, MPI_INT, root, communicator);
 
     domain_init();
-    MPI_Finalize();
-    exit(EXIT_SUCCESS);
 
     struct timeval t_start, t_end;
     gettimeofday(&t_start, NULL);
@@ -162,11 +165,12 @@ int main(int argc, char **argv)
                 max_iteration,
                 100.0 * (real_t)iteration / (real_t)max_iteration);
 
-            domain_save(iteration);
+            //domain_save(iteration);
         }
 
         swap(&temp[0], &temp[1]);
     }
+    printf("Done!\n");
 
     gettimeofday(&t_end, NULL);
     printf("Total elapsed time: %lf seconds\n",
@@ -185,9 +189,9 @@ void time_step(void)
     // TODO 3: Update the area of iteration so that each
     // process only iterates over its own subgrid.
 
-    for (int_t y = 1; y <= M; y++)
+    for (int_t y = 1; y <= local_M; y++)
     {
-        for (int_t x = 1; x <= N; x++)
+        for (int_t x = 1; x <= local_N; x++)
         {
             c = T(x, y);
 
@@ -209,16 +213,30 @@ void boundary_condition(void)
     // TODO 4: Change the application of boundary conditions
     // to match the cartesian topology.
 
-    for (int_t x = 1; x <= N; x++)
+    for (int_t x = 1; x <= local_N; x++)
     {
         T(x, 0) = T(x, 2);
-        T(x, M + 1) = T(x, M - 1);
+        T(x, local_M + 1) = T(x, local_M - 1);
     }
 
-    for (int_t y = 1; y <= M; y++)
+    for (int_t y = 1; y <= local_M; y++)
     {
         T(0, y) = T(2, y);
-        T(N + 1, y) = T(N - 1, y);
+        T(local_N + 1, y) = T(local_N - 1, y);
+    }
+
+    if (MPI_RANK_FIRST) {
+        for ( int_t y = 1; y <= local_M; y++ )
+        {
+            T(0, y) = T(2, y);
+        }
+    }
+    if (MPI_RANK_LAST) {
+        for ( int_t y = 1; y <= local_M; y++ )
+        {
+            T(local_N+1, y) = T(local_N-1, y);
+        }
+
     }
 }
 
