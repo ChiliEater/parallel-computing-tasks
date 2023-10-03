@@ -26,35 +26,31 @@ int_t
 int location[];
 
 real_t
-    *temp[2] = { NULL, NULL },
+    *temp[2] = {NULL, NULL},
     *thermal_diffusivity,
     dt;
 
-#define T(x,y)                      temp[0][(y) * (N + 2) + (x)]
-#define T_next(x,y)                 temp[1][((y) * (N + 2) + (x))]
-#define THERMAL_DIFFUSIVITY(x,y)    thermal_diffusivity[(y) * (N + 2) + (x)]
+#define T(x, y) temp[0][(y) * (N + 2) + (x)]
+#define T_next(x, y) temp[1][((y) * (N + 2) + (x))]
+#define THERMAL_DIFFUSIVITY(x, y) thermal_diffusivity[(y) * (N + 2) + (x)]
 #define DIMENSIONS 2
 
-void time_step ( void );
-void boundary_condition( void );
-void border_exchange( void );
-void domain_init ( void );
-void domain_save ( int_t iteration );
-void domain_finalize ( void );
+void time_step(void);
+void boundary_condition(void);
+void border_exchange(void);
+void domain_init(void);
+void domain_save(int_t iteration);
+void domain_finalize(void);
 
-
-void
-swap ( real_t** m1, real_t** m2 )
+void swap(real_t **m1, real_t **m2)
 {
-    real_t* tmp;
+    real_t *tmp;
     tmp = *m1;
     *m1 = *m2;
     *m2 = tmp;
 }
 
-
-int
-main ( int argc, char **argv )
+int main(int argc, char **argv)
 {
     // TODO 1:
     // - Initialize and finalize MPI.
@@ -72,8 +68,7 @@ main ( int argc, char **argv )
     MPI_Dims_create(
         size,
         DIMENSIONS,
-        dimensions
-    );
+        dimensions);
 
     // Create communicator
     MPI_Comm communicator;
@@ -85,9 +80,7 @@ main ( int argc, char **argv )
         dimensions,
         periods,
         0,
-        &communicator
-    );
-
+        &communicator);
 
     // Initialize rank and position
     const int_t root = 0;
@@ -97,8 +90,7 @@ main ( int argc, char **argv )
         communicator,
         rank,
         DIMENSIONS,
-        location
-    );
+        location);
 
     // Let root parse args
     if (rank == root)
@@ -128,9 +120,9 @@ main ( int argc, char **argv )
     domain_init();
 
     struct timeval t_start, t_end;
-    gettimeofday ( &t_start, NULL );
+    gettimeofday(&t_start, NULL);
 
-    for ( int_t iteration = 0; iteration <= max_iteration; iteration++ )
+    for (int_t iteration = 0; iteration <= max_iteration; iteration++)
     {
         // TODO 6: Implement border exchange.
         // Hint: Creating MPI datatypes for rows and columns might be useful.
@@ -139,44 +131,40 @@ main ( int argc, char **argv )
 
         time_step();
 
-        if ( iteration % snapshot_frequency == 0 )
+        if (iteration % snapshot_frequency == 0)
         {
-            printf (
+            printf(
                 "Iteration %ld of %ld (%.2lf%% complete)\n",
                 iteration,
                 max_iteration,
-                100.0 * (real_t) iteration / (real_t) max_iteration
-            );
+                100.0 * (real_t)iteration / (real_t)max_iteration);
 
-            domain_save ( iteration );
+            domain_save(iteration);
         }
 
-        swap( &temp[0], &temp[1] );
+        swap(&temp[0], &temp[1]);
     }
 
-    gettimeofday ( &t_end, NULL );
-    printf ( "Total elapsed time: %lf seconds\n",
-            WALLTIME(t_end) - WALLTIME(t_start)
-            );
+    gettimeofday(&t_end, NULL);
+    printf("Total elapsed time: %lf seconds\n",
+           WALLTIME(t_end) - WALLTIME(t_start));
 
     domain_finalize();
 
     MPI_Finalize();
-    exit ( EXIT_SUCCESS );
+    exit(EXIT_SUCCESS);
 }
 
-
-void
-time_step ( void )
+void time_step(void)
 {
     real_t c, t, b, l, r, K, new_value;
 
     // TODO 3: Update the area of iteration so that each
     // process only iterates over its own subgrid.
 
-    for ( int_t y = 1; y <= M; y++ )
+    for (int_t y = 1; y <= M; y++)
     {
-        for ( int_t x = 1; x <= N; x++ )
+        for (int_t x = 1; x <= N; x++)
         {
             c = T(x, y);
 
@@ -193,29 +181,25 @@ time_step ( void )
     }
 }
 
-
-void
-boundary_condition ( void )
+void boundary_condition(void)
 {
     // TODO 4: Change the application of boundary conditions
     // to match the cartesian topology.
 
-    for ( int_t x = 1; x <= N; x++ )
+    for (int_t x = 1; x <= N; x++)
     {
         T(x, 0) = T(x, 2);
-        T(x, M+1) = T(x, M-1);
+        T(x, M + 1) = T(x, M - 1);
     }
 
-    for ( int_t y = 1; y <= M; y++ )
+    for (int_t y = 1; y <= M; y++)
     {
         T(0, y) = T(2, y);
-        T(N+1, y) = T(N-1, y);
+        T(N + 1, y) = T(N - 1, y);
     }
 }
 
-
-void
-domain_init ( void )
+void domain_init(void)
 {
     // TODO 2:
     // - Find the number of columns and rows in each process' subgrid.
@@ -225,55 +209,52 @@ domain_init ( void )
     // Note: you are allowed to assume that the grid size is divisible by
     // the number of processes.
 
-    temp[0] = malloc ( (M+2)*(N+2) * sizeof(real_t) );
-    temp[1] = malloc ( (M+2)*(N+2) * sizeof(real_t) );
-    thermal_diffusivity = malloc ( (M+2)*(N+2) * sizeof(real_t) );
+    temp[0] = malloc((M + 2) * (N + 2) * sizeof(real_t));
+    temp[1] = malloc((M + 2) * (N + 2) * sizeof(real_t));
+    thermal_diffusivity = malloc((M + 2) * (N + 2) * sizeof(real_t));
 
     dt = 0.1;
 
-    for ( int_t y = 1; y <= M; y++ )
+    for (int_t x = 1; x <= N; x++)
     {
-        for ( int_t x = 1; x <= N; x++ )
+        for (int_t y = 1; y <= M; y++)
         {
             real_t temperature = 30 + 30 * sin((x + y) / 20.0);
             real_t diffusivity = 0.05 + (30 + 30 * sin((N - x + y) / 20.0)) / 605.0;
 
-            T(x,y) = temperature;
-            T_next(x,y) = temperature;
-            THERMAL_DIFFUSIVITY(x,y) = diffusivity;
+            T(x, y) = temperature;
+            T_next(x, y) = temperature;
+            THERMAL_DIFFUSIVITY(x, y) = diffusivity;
         }
     }
 }
 
-
-void
-domain_save ( int_t iteration )
+void domain_save(int_t iteration)
 {
     // TODO 5: Use MPI I/O to save the state of the domain to file.
     // Hint: Creating MPI datatypes might be useful.
 
     int_t index = iteration / snapshot_frequency;
     char filename[256];
-    memset ( filename, 0, 256*sizeof(char) );
-    sprintf ( filename, "data/%.5ld.bin", index );
+    memset(filename, 0, 256 * sizeof(char));
+    sprintf(filename, "data/%.5ld.bin", index);
 
-    FILE *out = fopen ( filename, "wb" );
-    if ( ! out ) {
+    FILE *out = fopen(filename, "wb");
+    if (!out)
+    {
         fprintf(stderr, "Failed to open file: %s\n", filename);
         exit(1);
     }
-    for ( int_t iter = 1; iter <= N; iter++)
+    for (int_t iter = 1; iter <= N; iter++)
     {
-        fwrite( temp[0] + (M+2) * iter + 1, sizeof(real_t), N, out );
+        fwrite(temp[0] + (M + 2) * iter + 1, sizeof(real_t), N, out);
     }
-    fclose ( out );
+    fclose(out);
 }
 
-
-void
-domain_finalize ( void )
+void domain_finalize(void)
 {
-    free ( temp[0] );
-    free ( temp[1] );
-    free ( thermal_diffusivity );
+    free(temp[0]);
+    free(temp[1]);
+    free(thermal_diffusivity);
 }
