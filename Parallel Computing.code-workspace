@@ -140,7 +140,10 @@
             "__config": "c",
             "algorithm": "c",
             "atomic": "c",
-            "complex": "c"
+            "complex": "c",
+            "string.h": "c",
+            "format": "c",
+            "__locale": "c"
         }
     },
     "tasks": {
