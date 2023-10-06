@@ -15,6 +15,8 @@
 typedef int64_t int_t;
 typedef double real_t;
 
+MPI_Comm communicator;
+
 int_t
     M,
     N,
@@ -41,6 +43,8 @@ real_t
 #define DIMENSIONS 2
 #define MPI_RANK_FIRST (location[0] == 0 && location[1] == 0)
 #define MPI_RANK_LAST ((location[0] == dimensions[0]) && (location[1] == dimensions[1]))
+#define MPI_X_AXIS 1
+#define MPI_Y_AXIS 0
 
 void time_step(void);
 void boundary_condition(void);
@@ -88,6 +92,7 @@ int main(int argc, char **argv)
     //   and broadcast to other processes
 
     // Initialize MPI
+    // Valgrind tells me this call is creating memory leaks. No clue what that's about.
     MPI_Init(&argc, &argv);
 
     // Determine dimensions
@@ -99,7 +104,6 @@ int main(int argc, char **argv)
         dimensions);
 
     // Create communicator
-    MPI_Comm communicator;
     int_t periods[2] = {0, 0};
 
     MPI_Cart_create(
@@ -165,7 +169,7 @@ int main(int argc, char **argv)
                 max_iteration,
                 100.0 * (real_t)iteration / (real_t)max_iteration);
 
-            //domain_save(iteration);
+            domain_save(iteration);
         }
 
         swap(&temp[0], &temp[1]);
@@ -186,9 +190,7 @@ void time_step(void)
 {
     real_t c, t, b, l, r, K, new_value;
 
-    // TODO 3: Update the area of iteration so that each
-    // process only iterates over its own subgrid.
-
+    // Simply adjusting M and N to the local variants appears to do the trick
     for (int_t y = 1; y <= local_M; y++)
     {
         for (int_t x = 1; x <= local_N; x++)
@@ -208,11 +210,58 @@ void time_step(void)
     }
 }
 
+void border_exchange(void) {
+    int_t rank_prev;
+    int_t rank_next;
+
+    MPI_Cart_shift(
+        communicator,
+        MPI_X_AXIS,
+        1,
+        rank,
+        &rank_next
+    );
+    MPI_Cart_shift(
+        communicator,
+        MPI_X_AXIS,
+        -1,
+        rank,
+        &rank_prev
+    );
+
+    // TODO: Definetly something wrong here. This is basically taken from the solution to
+    // assignment 2, though I used a similar solution.
+    MPI_Sendrecv(temp[0] + (local_M + 2),
+                local_M + 2,
+                MPI_DOUBLE,
+                rank_prev,
+                0,
+                temp[0] + (local_M + 2) * (local_N + 1),
+                local_M + 2,
+                MPI_DOUBLE,
+                rank_next,
+                0,
+                communicator,
+                MPI_STATUS_IGNORE);
+
+    MPI_Sendrecv(temp[0] + (local_M + 2) * local_N,
+                local_M + 2,
+                MPI_DOUBLE,
+                rank_next,
+                1,
+                temp[0],
+                local_M + 2,
+                MPI_DOUBLE,
+                rank_prev,
+                1,
+                communicator,
+                MPI_STATUS_IGNORE);
+
+}
+
 void boundary_condition(void)
 {
-    // TODO 4: Change the application of boundary conditions
-    // to match the cartesian topology.
-
+    // Regular boundary conditions
     for (int_t x = 1; x <= local_N; x++)
     {
         T(x, 0) = T(x, 2);
@@ -225,6 +274,7 @@ void boundary_condition(void)
         T(local_N + 1, y) = T(local_N - 1, y);
     }
 
+    // Special cases for the top left and bottom right ranks
     if (MPI_RANK_FIRST) {
         for ( int_t y = 1; y <= local_M; y++ )
         {
@@ -242,64 +292,85 @@ void boundary_condition(void)
 
 void domain_init(void)
 {
-    // TODO 2:
-    // - Find the number of columns and rows in each process' subgrid.
-    // - Allocate memory for each process' subgrid.
-    // - Find each process' offset to calculate the correct initial values.
-    // Hint: you can get useful information from the cartesian communicator.
-    // Note: you are allowed to assume that the grid size is divisible by
-    // the number of processes.
+    // Calculate offsets and sizes
     local_N = N / dimensions[0];
     local_M = M / dimensions[1];
     x_offset = local_N * location[0];
     y_offset = local_M * location[1];
 
+    // Allocate enough memory
+    // TODO: Valgrind tells me something isn't right here. False positive?
     temp[0] = malloc((local_M + 2) * (local_N + 2) * sizeof(real_t));
     temp[1] = malloc((local_M + 2) * (local_N + 2) * sizeof(real_t));
     thermal_diffusivity = malloc((local_M + 2) * (local_N + 2) * sizeof(real_t));
 
-    //printf("nmxy: %d, %d: %d, %d\n", local_N, local_M, x_offset, y_offset);
     dt = 0.1;
-    int loops = 0;
+
+    // Fill the the buffers with samples
     for (int_t y = 1; y <= local_M; y++)
     {
         for (int_t x = 1; x <= local_N; x++)
         {
             real_t temperature = 30 + 30 * sin((x_offset + x + y_offset + y) / 20.0);
             real_t diffusivity = 0.05 + (30 + 30 * sin((N - x_offset + x + y_offset + y) / 20.0)) / 605.0;
-            //FILE *log = open_log();
-            //fprintf(log, "(%d, %d) Accessing: %d, %d, index %d\n", location[0], location[1], x, y, (y) * (N + 2) + (x));
-            //close_log(log);
             T(x, y) = temperature;
             T_next(x, y) = temperature;
             THERMAL_DIFFUSIVITY(x, y) = diffusivity;
         }
     }
-    //printf("loops: %d\n", loops);
-    //printf("llt: %d, %d: %d\n", location[0], location[1], T(29, 69));
 }
 
 void domain_save(int_t iteration)
 {
-    // TODO 5: Use MPI I/O to save the state of the domain to file.
-    // Hint: Creating MPI datatypes might be useful.
-
+    // Determine file to write
     int_t index = iteration / snapshot_frequency;
     char filename[256];
     memset(filename, 0, 256 * sizeof(char));
     sprintf(filename, "data/%.5ld.bin", index);
 
-    FILE *out = fopen(filename, "wb");
+    // Get file descriptor
+    MPI_File out;
+    MPI_File_open (
+        communicator,
+        filename,
+        MPI_MODE_CREATE | MPI_MODE_WRONLY,
+        MPI_INFO_NULL,
+        &out
+    );
+
+    // Ensure we actually opened the file
     if (!out)
     {
         fprintf(stderr, "Failed to open file: %s\n", filename);
         exit(1);
     }
-    for (int_t iter = 1; iter <= N; iter++)
+
+    // Determine buffer sizes
+    int_t load_offset = local_M+2;
+    int_t load_size = local_N*(local_M+2);
+
+    if ( MPI_RANK_FIRST )
     {
-        fwrite(temp[0] + (M + 2) * iter + 1, sizeof(real_t), N, out);
+        load_size += local_M+2;
+        load_offset = 0;
     }
-    fclose(out);
+
+    if ( MPI_RANK_LAST )
+    {
+        load_size += local_M+2;
+    }
+
+    // Write data
+    MPI_File_write_ordered (
+        out,
+        temp[0] + load_offset,
+        load_size,
+        MPI_DOUBLE,
+        MPI_STATUS_IGNORE
+    );
+
+    // Close file
+    MPI_File_close ( &out );
 }
 
 void domain_finalize(void)
