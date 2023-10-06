@@ -17,19 +17,22 @@ typedef double real_t;
 
 MPI_Comm communicator;
 
+MPI_Datatype row, column;
+
 int_t
     M,
     N,
     max_iteration,
     snapshot_frequency,
-    size,
-    rank,
     local_N,
     local_M,
     x_offset,
     y_offset;
+int
+    size,
+    rank;
 
-int location[];
+int location[2];
 int dimensions[] = {0, 0};
 
 real_t
@@ -37,14 +40,14 @@ real_t
     *thermal_diffusivity,
     dt;
 
-#define T(x, y) temp[0][(y) * (local_M + 2) + (x)]
-#define T_next(x, y) temp[1][((y) * (local_M + 2) + (x))]
+#define T(x, y) temp[0][(y) * (local_N + 2) + (x)]
+#define T_next(x, y) temp[1][((y) * (local_N + 2) + (x))]
 #define THERMAL_DIFFUSIVITY(x, y) thermal_diffusivity[(y) * (local_N + 2) + (x)]
 #define DIMENSIONS 2
 #define MPI_RANK_FIRST (location[0] == 0 && location[1] == 0)
 #define MPI_RANK_LAST ((location[0] == dimensions[0]) && (location[1] == dimensions[1]))
-#define MPI_X_AXIS 1
-#define MPI_Y_AXIS 0
+#define MPI_X_AXIS 0
+#define MPI_Y_AXIS 1
 
 void time_step(void);
 void boundary_condition(void);
@@ -104,7 +107,7 @@ int main(int argc, char **argv)
         dimensions);
 
     // Create communicator
-    int_t periods[2] = {0, 0};
+    int periods[2] = {0, 0};
 
     MPI_Cart_create(
         MPI_COMM_WORLD,
@@ -154,9 +157,7 @@ int main(int argc, char **argv)
 
     for (int_t iteration = 0; iteration <= max_iteration; iteration++)
     {
-        // TODO 6: Implement border exchange.
-        // Hint: Creating MPI datatypes for rows and columns might be useful.
-
+        border_exchange();
         boundary_condition();
 
         time_step();
@@ -174,8 +175,6 @@ int main(int argc, char **argv)
 
         swap(&temp[0], &temp[1]);
     }
-    printf("Done!\n");
-
     gettimeofday(&t_end, NULL);
     printf("Total elapsed time: %lf seconds\n",
            WALLTIME(t_end) - WALLTIME(t_start));
@@ -210,53 +209,97 @@ void time_step(void)
     }
 }
 
+void derive_types(void) {
+    MPI_Type_vector(
+        local_M,
+        1,
+        local_N+2,
+        MPI_DOUBLE,
+        &column
+    );
+    
+    MPI_Type_contiguous(
+        local_N,
+        MPI_DOUBLE,
+        &row
+    );
+
+    MPI_Type_commit(&column);
+    MPI_Type_commit(&row);
+}
+
 void border_exchange(void) {
-    int_t rank_prev;
-    int_t rank_next;
+    int left;
+    int right;
+    int up;
+    int down;
 
     MPI_Cart_shift(
         communicator,
         MPI_X_AXIS,
         1,
-        rank,
-        &rank_next
+        &left,
+        &right
     );
     MPI_Cart_shift(
         communicator,
-        MPI_X_AXIS,
-        -1,
-        rank,
-        &rank_prev
+        MPI_Y_AXIS,
+        1,
+        &up,
+        &down
     );
 
-    // TODO: Definetly something wrong here. This is basically taken from the solution to
-    // assignment 2, though I used a similar solution.
-    MPI_Sendrecv(temp[0] + (local_M + 2),
-                local_M + 2,
-                MPI_DOUBLE,
-                rank_prev,
+    MPI_Sendrecv(&T(1, 1),
+                1,
+                column,
+                left,
                 0,
-                temp[0] + (local_M + 2) * (local_N + 1),
-                local_M + 2,
-                MPI_DOUBLE,
-                rank_next,
+                &T(local_N+1, 1),
+                1,
+                column,
+                right,
                 0,
                 communicator,
                 MPI_STATUS_IGNORE);
 
-    MPI_Sendrecv(temp[0] + (local_M + 2) * local_N,
-                local_M + 2,
-                MPI_DOUBLE,
-                rank_next,
+    MPI_Sendrecv(&T(local_N, 1),
                 1,
-                temp[0],
-                local_M + 2,
-                MPI_DOUBLE,
-                rank_prev,
+                column,
+                right,
+                0,
+                &T(0, 1),
                 1,
+                column,
+                left,
+                0,
                 communicator,
                 MPI_STATUS_IGNORE);
 
+    MPI_Sendrecv(&T(1, 1),
+                1,
+                row,
+                up,
+                0,
+                &T(1, local_M+1),
+                1,
+                row,
+                down,
+                0,
+                communicator,
+                MPI_STATUS_IGNORE);
+
+    MPI_Sendrecv(&T(1, local_M),
+                1,
+                row,
+                down,
+                0,
+                &T(1, 0),
+                1,
+                row,
+                up,
+                0,
+                communicator,
+                MPI_STATUS_IGNORE);
 }
 
 void boundary_condition(void)
