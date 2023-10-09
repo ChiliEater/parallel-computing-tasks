@@ -13,6 +13,9 @@
         {
             "path": "./exercise-3",
         },
+        {
+            "path": "./exercise-4",
+        },
     ],
     "launch": {
         "version": "0.2.0",
@@ -76,6 +79,17 @@
                 ],
                 "cwd": "${workspaceFolder:exercise-3}",
                 "preLaunchTask": "make-sequential",
+                
+            },
+            {
+                "type": "lldb",
+                "request": "launch",
+                "name": "Launch Exercise 4: Sequential",
+                "program": "${workspaceFolder:exercise-4}/parallel",
+                "args": [
+                ],
+                "cwd": "${workspaceFolder:exercise-4}",
+                "preLaunchTask": "make",
                 
             },
         ],
