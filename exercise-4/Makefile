@@ -11,6 +11,8 @@ VIDEO:=$(VIDEODIR)*.mp4
 CC:=gcc
 CFLAGS+=-fopenmp
 LDLIBS+=-lm -pthread
+CFLAGS+=-O0
+CFLAGS+=-ggdb
 
 OMP_SRC_FILES:=src/$(PROGNAME)_omp.c src/argument_utils.c
 PTHREADS_SRC_FILES:=src/$(PROGNAME)_pthreads.c src/argument_utils.c

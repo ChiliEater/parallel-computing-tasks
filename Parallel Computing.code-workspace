@@ -85,11 +85,33 @@
                 "type": "lldb",
                 "request": "launch",
                 "name": "Launch Exercise 4: Sequential",
-                "program": "${workspaceFolder:exercise-4}/parallel",
+                "program": "${workspaceFolder:exercise-4}/sequential",
+                "args": [
+                ],
+                "cwd": "${workspaceFolder:exercise-4}",
+                "preLaunchTask": "make-sequential",
+                
+            },
+            {
+                "type": "lldb",
+                "request": "launch",
+                "name": "Launch Exercise 4: pthreads",
+                "program": "${workspaceFolder:exercise-4}/pthreads",
                 "args": [
                 ],
                 "cwd": "${workspaceFolder:exercise-4}",
                 "preLaunchTask": "make",
+                
+            },
+            {
+                "type": "lldb",
+                "request": "launch",
+                "name": "Launch Exercise 4: OMP",
+                "program": "${workspaceFolder:exercise-4}/omp",
+                "args": [
+                ],
+                "cwd": "${workspaceFolder:exercise-4}",
+                "preLaunchTask": "make-omp",
                 
             },
         ],
@@ -184,6 +206,34 @@
                 "command": "make",
                 "type": "shell",
                 "args": ["sequential"],
+                "presentation": {
+                    "reveal": "always"
+                },
+                "group": "build",
+                "icon": {},
+                "options": {
+                    "cwd": "${fileWorkspaceFolder}"
+                }
+            },
+            {
+                "label": "make-pthreads",
+                "command": "make",
+                "type": "shell",
+                "args": ["pthreads"],
+                "presentation": {
+                    "reveal": "always"
+                },
+                "group": "build",
+                "icon": {},
+                "options": {
+                    "cwd": "${fileWorkspaceFolder}"
+                }
+            },
+            {
+                "label": "make-omp",
+                "command": "make",
+                "type": "shell",
+                "args": ["omp"],
                 "presentation": {
                     "reveal": "always"
                 },
