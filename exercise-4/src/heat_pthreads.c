@@ -11,7 +11,7 @@
 
 // Convert 'struct timeval' into seconds in double prec. floating point
 #define WALLTIME(t) ((double)(t).tv_sec + 1e-6 * (double)(t).tv_usec)
-#define THREAD_COUNT 8
+#define THREAD_COUNT 4
 #define RANK_FIRST (info->id == 0)
 #define RANK_LAST (info->id == THREAD_COUNT - 1)
 
@@ -38,6 +38,7 @@ typedef struct
 
 pthread_barrier_t barrier;
 pthread_mutex_t file_lock;
+pthread_barrier_t file_barrier;
 
 #define T(x, y) info->temp[0][(y) * (info->local_N + 2) + (x)]
 #define T_next(x, y) info->temp[1][((y) * (info->local_N + 2) + (x))]
@@ -74,6 +75,7 @@ int main(int argc, char **argv)
     snapshot_frequency = options->snapshot_frequency;
 
     pthread_barrier_init(&barrier, NULL, THREAD_COUNT);
+    pthread_barrier_init(&file_barrier, NULL, THREAD_COUNT);
     pthread_mutex_init(&file_lock, NULL);
 
     pthread_t threads[THREAD_COUNT];
@@ -99,6 +101,7 @@ int main(int argc, char **argv)
 
     pthread_mutex_destroy(&file_lock);
     pthread_barrier_destroy(&barrier);
+    pthread_barrier_destroy(&file_barrier);
 
     printf("Done!\n");
 
@@ -107,8 +110,8 @@ int main(int argc, char **argv)
 
 void app(thread_info *info)
 {
-    printf("%d ready\n", info->id);
     domain_init(info);
+    printf("%d ready\n", info->id);
 
     struct timeval t_start, t_end;
     gettimeofday(&t_start, NULL);
@@ -146,21 +149,33 @@ void app(thread_info *info)
 void border_exchange(thread_info *info)
 {
     // printf("%d: %d\n", info->id, info->id - 1 + (info->id % 2 * 2));
-    boundary_buffer[info->id * 2] = &T(0, 1);
-    boundary_buffer[info->id * 2 + 1] = &T(info->local_N, 1);
+    boundary_buffer[info->id * 2] = info->temp[0] + (M + 2);
+    boundary_buffer[info->id * 2 + 1] = info->temp[0] + (M + 2) * info->local_N;
 
     pthread_barrier_wait(&barrier);
 
     if (!RANK_FIRST)
     {
         // Copy from up?
-        memcpy(&T(0, 0), boundary_buffer[info->id * 2 - 1], (M + 2) * sizeof(real_t));
+        //for (int i = 0; i < info->local_N + 2; i++) {
+        //    T(i,0) = boundary_buffer[info->id * 2 - 1][i];
+        //}
+        memcpy(
+            info->temp[0],
+            boundary_buffer[info->id * 2 - 1],
+            (info->local_N + 2) * sizeof(real_t));
     }
 
     if (!RANK_LAST)
     {
         // Copy from down?
-        memcpy(&T(info->local_N + 1, 1), boundary_buffer[info->id * 2 + 2], (M + 2) * sizeof(real_t));
+        //for (int i = 0; i < info->local_N + 2; i++) {
+        //    T(i+1,M + 2) = boundary_buffer[info->id * 2 + 2][i];
+        //}
+        memcpy(
+            info->temp[0] + (M + 2) * (info->local_N + 1),
+            boundary_buffer[info->id * 2 + 2],
+            (info->local_N + 2) * sizeof(real_t));
     }
 }
 
@@ -216,15 +231,30 @@ void boundary_condition(thread_info *info)
 
 void domain_init(thread_info *info)
 {
+    int_t remaining_N = N % THREAD_COUNT;
+    printf("%d\n", info->local_N);
+    if (remaining_N != 0)
+    {
+        if (info->id < remaining_N)
+        {
+            info->local_N++;
+            info->offset += info->id;
+        }
+        else
+        {
+            info->offset += remaining_N;
+        }
+    }
+
     info->temp[0] = malloc((M + 2) * (info->local_N + 2) * sizeof(real_t));
     info->temp[1] = malloc((M + 2) * (info->local_N + 2) * sizeof(real_t));
     info->thermal_diffusivity = malloc((M + 2) * (info->local_N + 2) * sizeof(real_t));
 
     info->dt = 0.1;
 
-    for (int_t y = 1; y <= M; y++)
+    for (int_t x = 1; x <= info->local_N; x++)
     {
-        for (int_t x = 1; x <= info->local_N; x++)
+        for (int_t y = 1; y <= M; y++)
         {
             real_t temperature = 30 + 30 * sin((info->offset + x + y) / 20.0);
             real_t diffusivity = 0.05 + (30 + 30 * sin((N - (x + info->offset) + y) / 20.0)) / 605.0;
@@ -254,22 +284,25 @@ void domain_save(int_t iteration, thread_info *info)
 
     int_t load_offset = M + 2;
     int_t load_size = info->local_N * (M + 2);
+    int_t seek_offset = load_size + M + 2 + load_size * (info->id - 1);
 
     if (RANK_FIRST)
     {
         load_size += M + 2;
         load_offset = 0;
+        seek_offset = 0;
     }
     if (RANK_LAST)
     {
         load_size += M + 2;
     }
 
-    fseek(out, load_size * info->id, SEEK_SET);
+    fseek(out, seek_offset, SEEK_SET);
     fwrite(info->temp[0] + load_offset, sizeof(real_t), load_size, out);
     fclose(out);
 
     pthread_mutex_unlock(&file_lock);
+    pthread_barrier_wait(&file_barrier);
 }
 
 void domain_finalize(thread_info *info)

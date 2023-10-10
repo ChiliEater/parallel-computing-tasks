@@ -5,12 +5,25 @@
 #include <unistd.h>
 #include <math.h>
 #include <sys/time.h>
-#include <mpi.h>
 
 #include "../inc/argument_utils.h"
+#include <mpi.h>
 
 // Convert 'struct timeval' into seconds in double prec. floating point
 #define WALLTIME(t) ((double)(t).tv_sec + 1e-6 * (double)(t).tv_usec)
+
+#define MPI_RANK_ROOT  ( rank == 0 )
+#define MPI_RANK_FIRST ( MPI_RANK_ROOT )
+#define MPI_RANK_LAST  ( rank == comm_size-1 )
+#define MPI_RANK_EVEN  ( rank % 2 == 0 )
+#define MPI_RANK_ODD   ( rank % 2 != 0 )
+
+int
+    rank,
+    comm_size,
+    local_N,
+    remaining_N,
+    local_x_offset;
 
 typedef int64_t int_t;
 typedef double real_t;
@@ -19,57 +32,52 @@ int_t
     N,
     M,
     max_iteration,
-    snapshot_frequency,
-    size,
-    rank,
-    origin_N,
-    origin_M,
-    size_N,
-    size_M;
-
-int_t *local_sizes_N;
-int_t *local_sizes_M;
+    snapshot_frequency;
 
 real_t
-    *temp[2] = {NULL, NULL},
+    *temp[2] = { NULL, NULL },
     *thermal_diffusivity,
     dx,
     dt;
 
-#define T(i, j) temp[0][(i) * (size_M + 2) + (j)]
-#define T_next(i, j) temp[1][((i) * (size_M + 2) + (j))]
-#define THERMAL_DIFFUSIVITY(i, j) thermal_diffusivity[(i) * (size_M + 2) + (j)]
+#define T(i,j)                      temp[0][(i)*(M+2)+(j)]
+#define T_next(i,j)                 temp[1][((i)*(M+2)+(j))]
+#define THERMAL_DIFFUSIVITY(i,j)    thermal_diffusivity[(i)*(M+2)+(j)]
 
-void time_step(void);
-void boundary_condition(void);
-void border_exchange(void);
-void domain_init(void);
-void domain_save(int_t iteration);
-void domain_finalize(void);
+void time_step ( void );
+void boundary_condition( void );
+void border_exchange( void );
+void domain_init ( void );
+void domain_save ( int_t iteration );
+void domain_finalize ( void );
 
-void swap(real_t **m1, real_t **m2)
+void
+swap ( real_t** m1, real_t** m2 )
 {
-    real_t *tmp;
+    real_t* tmp;
     tmp = *m1;
     *m1 = *m2;
     *m2 = tmp;
 }
 
-int main(int argc, char **argv)
+
+int
+main ( int argc, char **argv )
 {
     // TODO 1: Initialize MPI
-    MPI_Init(&argc, &argv);
-    const int root = 0;
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Init( &argc, &argv );
+
+    MPI_Comm_size( MPI_COMM_WORLD, &comm_size );
+    MPI_Comm_rank( MPI_COMM_WORLD, &rank );
+
     // TODO 2: Parse arguments in the rank 0 processes
     // and broadcast to other processes
-    if (rank == root)
+    if ( MPI_RANK_ROOT )
     {
-        OPTIONS *options = parse_args(argc, argv);
-        if (!options)
+        OPTIONS *options = parse_args( argc, argv );
+        if ( !options )
         {
-            fprintf(stderr, "Argument parsing failed\n");
+            fprintf( stderr, "Argument parsing failed\n" );
             exit(1);
         }
 
@@ -79,28 +87,19 @@ int main(int argc, char **argv)
         snapshot_frequency = options->snapshot_frequency;
     }
 
-    MPI_Bcast(&N, 1, MPI_INT, root, MPI_COMM_WORLD);
-    MPI_Bcast(&M, 1, MPI_INT, root, MPI_COMM_WORLD);
-    MPI_Bcast(&max_iteration, 1, MPI_INT, root, MPI_COMM_WORLD);
-    MPI_Bcast(&snapshot_frequency, 1, MPI_INT, root, MPI_COMM_WORLD);
-
-
-    local_sizes_N = malloc(size * sizeof(int_t));
-    for (int_t r = 0; r < size; r++)
-        local_sizes_N[r] = (int_t)(N / size) + ((r < (N % size)) ? 1 : 0);
-
-    local_sizes_M = malloc(size * sizeof(int_t));
-    for (int_t r = 0; r < size; r++)
-        local_sizes_M[r] = (int_t)(M / size) + ((r < (M % size)) ? 1 : 0);
+    MPI_Bcast ( &N, 1, MPI_INT64_T, 0, MPI_COMM_WORLD );
+    MPI_Bcast ( &M, 1, MPI_INT64_T, 0, MPI_COMM_WORLD );
+    MPI_Bcast ( &max_iteration, 1, MPI_INT64_T, 0, MPI_COMM_WORLD );
+    MPI_Bcast ( &snapshot_frequency, 1, MPI_INT64_T, 0, MPI_COMM_WORLD );
 
     // TODO 3: Allocate space for each process' sub-grids
     // and initialize data for the sub-grids
     domain_init();
 
     struct timeval t_start, t_end;
-    gettimeofday(&t_start, NULL);
+    gettimeofday ( &t_start, NULL );
 
-    for (int_t iteration = 0; iteration <= max_iteration; iteration++)
+    for ( int_t iteration = 0; iteration <= max_iteration; iteration++ )
     {
         // TODO 7: Communicate border values
         border_exchange();
@@ -111,41 +110,49 @@ int main(int argc, char **argv)
         // TODO 4: Time step calculations
         time_step();
 
-        if (iteration % snapshot_frequency == 0)
+        if ( iteration % snapshot_frequency == 0 )
         {
-            printf(
-                "Iteration %ld of %ld (%.2lf%% complete)\n",
-                iteration,
-                max_iteration,
-                100.0 * (real_t)iteration / (real_t)max_iteration);
+            if ( MPI_RANK_ROOT )
+            {
+                printf (
+                    "Iteration %ld of %ld (%.2lf%% complete)\n",
+                    iteration,
+                    max_iteration,
+                    100.0 * (real_t) iteration / (real_t) max_iteration
+                );
+            }
 
             // TODO 6 MPI I/O
-            domain_save(iteration);
+            domain_save ( iteration );
         }
-
-        swap(&temp[0], &temp[1]);
+        swap( &temp[0], &temp[1] );
     }
-    gettimeofday(&t_end, NULL);
-    printf("Total elapsed time: %lf seconds\n",
-           WALLTIME(t_end) - WALLTIME(t_start));
+    gettimeofday ( &t_end, NULL );
+    if ( MPI_RANK_ROOT )
+    {
+        printf ( "Total elapsed time: %lf seconds\n",
+                WALLTIME(t_end) - WALLTIME(t_start)
+                );
+    }
 
     domain_finalize();
 
-
     // TODO 1: Finalize MPI
     MPI_Finalize();
-    exit(EXIT_SUCCESS);
+
+    exit ( EXIT_SUCCESS );
 }
 
-void time_step(void)
 
+void
+time_step ( void )
 {
     // TODO 4: Time step calculations
     real_t c, t, b, l, r, K, new_value;
 
-    for (int_t x = 1; x <= size_N; x++)
+    for ( int_t x = 1; x <= local_N; x++ )
     {
-        for (int_t y = 1; y <= size_M; y++)
+        for ( int_t y = 1; y <= M; y++ )
         {
             c = T(x, y);
 
@@ -162,131 +169,165 @@ void time_step(void)
     }
 }
 
-void boundary_condition(void)
+
+void
+boundary_condition ( void )
 {
     // TODO 5: Boundary conditions
-    if (rank == 0 || rank == size - 1)
+    for ( int_t x = 1; x <= local_N; x++ )
     {
-        for (int_t x = 1; x <= size_N; x++)
-        {
-            T(x, 0) = T(x, 2);
-            T(x, size_M + 1) = T(x, size_M - 1);
-        }
+        T(x, 0) = T(x, 2);
+    }
+    for ( int_t x = 1; x <= local_N; x++ )
+    {
+        T(x, M+1) = T(x, M-1);
+    }
 
-        for (int_t y = 1; y <= size_M; y++)
+    if ( MPI_RANK_FIRST )
+    {
+        for ( int_t y = 1; y <= M; y++ )
         {
             T(0, y) = T(2, y);
-            T(size_N + 1, y) = T(size_N - 1, y);
+        }
+    }
+    if ( MPI_RANK_LAST )
+    {
+        for ( int_t y = 1; y <= M; y++ )
+        {
+            T(local_N+1, y) = T(local_N-1, y);
         }
     }
 }
 
-void border_exchange(void)
+
+void
+border_exchange ( void )
 {
     // TODO 7: Communicate border values
+    int_t rank_prev = !MPI_RANK_FIRST ? rank-1 : MPI_PROC_NULL;
+    int_t rank_next = !MPI_RANK_LAST ? rank+1 : MPI_PROC_NULL;
 
-    int_t next = (rank + size + 1) % size;
-    int_t previous = (rank + size - 1) % size;
-    int_t first = temp[0][1];
-    first = 1;
-    int_t new_first = 0;
-    int_t last = temp[0][(size_N + 2) * (size_M + 2) - 2];
-    last = 2;
-    int_t new_last = 0;
+    MPI_Sendrecv(temp[0] + (M + 2),
+                 M + 2,
+                 MPI_DOUBLE,
+                 rank_prev,
+                 0,
+                 temp[0] + (M + 2) * (local_N + 1),
+                 M + 2,
+                 MPI_DOUBLE,
+                 rank_next,
+                 0,
+                 MPI_COMM_WORLD,
+                 MPI_STATUS_IGNORE);
 
-    if (previous < rank)
-    {
-        // Sendrecv first
-        MPI_Sendrecv(
-            &first, 1, MPI_INT, previous, rank,
-            &new_first, 1, MPI_INT, previous,
-            previous, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    }
-
-    if (next > rank)
-    {
-        // Sendrecv last
-        MPI_Sendrecv(
-            &last, 1, MPI_INT, next, rank,
-            &new_last, 1, MPI_INT, next,
-            next, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    }
-
-    temp[0][0] = new_first;
-    temp[0][(size_N + 2) * (size_M + 2) - 1] = new_last;
-
+    MPI_Sendrecv(temp[0] + (M + 2) * local_N,
+                 M + 2,
+                 MPI_DOUBLE,
+                 rank_next,
+                 1,
+                 temp[0],
+                 M + 2,
+                 MPI_DOUBLE,
+                 rank_prev,
+                 1,
+                 MPI_COMM_WORLD,
+                 MPI_STATUS_IGNORE);
 }
 
-void domain_init(void)
-{
-    // TODO 3: Allocate space for each process' sub-grids
-    // and initialize data for the sub-grids
-    size_N = local_sizes_N[rank];
-    size_M = local_sizes_M[rank];
-    origin_N = 0;
-    origin_M = 0;
 
-    for (int_t i = 0; i < rank; i++)
+void
+domain_init ( void )
+{
+    local_N = N / comm_size;
+    local_x_offset = rank * local_N;
+    remaining_N = N % comm_size;
+    if ( remaining_N != 0 )
     {
-        origin_N += local_sizes_N[i];
-        origin_M += local_sizes_M[i];
+        if ( rank < remaining_N )
+        {
+            local_N ++;
+            local_x_offset += rank;
+        }
+        else
+        {
+            local_x_offset += remaining_N;
+        }
     }
 
-    real_t
-        temperature,
-        diffusivity;
-
-    temp[0] = malloc((size_N + 2) * (size_M + 2) * sizeof(real_t));
-    temp[1] = malloc((size_N + 2) * (size_M + 2) * sizeof(real_t));
-    thermal_diffusivity = malloc((size_N + 2) * (size_M + 2) * sizeof(real_t));
+    temp[0] = malloc ( (local_N+2)*(M+2) * sizeof(real_t) );
+    temp[1] = malloc ( (local_N+2)*(M+2) * sizeof(real_t) );
+    thermal_diffusivity = malloc ( (local_N+2)*(M+2) * sizeof(real_t) );
 
     dt = 0.1;
     dx = 0.1;
 
-    for (int_t x = origin_N + 1; x <= origin_N + size_N; x++)
+    for ( int_t x = 1; x <= local_N; x++ )
     {
-        // printf("Rank %dx: %d\n", rank, x);
-        for (int_t y = origin_M + 1; y <= origin_M + size_M; y++)
+        for ( int_t y = 1; y <= M; y++ )
         {
-            // printf("Rank %dy: %d\n", rank, y);
-            temperature = 30 + 30 * sin((x + y) / 20.0);
-            diffusivity = 0.05 + (30 + 30 * sin((N - x + y) / 20.0)) / 605.0;
-            T(x - origin_N, y - origin_M) = temperature;
-            T_next(x - origin_N, y - origin_M) = temperature;
+            real_t temperature = 30+30*sin((local_x_offset+x+y)/20.0);
+            real_t diffusivity = 0.05+(30+30*sin((N-(local_x_offset+x)+y)/20.0))/605.0;
 
-            THERMAL_DIFFUSIVITY(x - origin_N, y - origin_M) = diffusivity;
+            T(x,y) = temperature;
+            T_next(x,y) = temperature;
+            THERMAL_DIFFUSIVITY(x,y) = diffusivity;
         }
     }
 }
 
-void domain_save(int_t iteration)
+
+void
+domain_save ( int_t iteration )
 {
     int_t index = iteration / snapshot_frequency;
     char filename[256];
-    memset(filename, 0, 256 * sizeof(char));
-    sprintf(filename, "data/%.5ld.bin", index);
+    memset ( filename, 0, 256*sizeof(char) );
+    sprintf ( filename, "data/%.5ld.bin", index );
 
+    // TODO 6: MPI I/O
     MPI_File out;
-    MPI_File_open(MPI_COMM_WORLD, filename, MPI_MODE_WRONLY | MPI_MODE_CREATE, MPI_INFO_NULL, &out);
-    if (!out)
-    {
+    MPI_File_open (
+        MPI_COMM_WORLD,
+        filename,
+        MPI_MODE_CREATE | MPI_MODE_WRONLY,
+        MPI_INFO_NULL,
+        &out
+    );
+
+    if ( ! out ) {
         fprintf(stderr, "Failed to open file: %s\n", filename);
         exit(1);
     }
-    int_t offset = 0;
-    for (int_t i = 0; i < rank; i++)
+
+    int_t load_offset = M+2;
+    int_t load_size = local_N*(M+2);
+
+    if ( MPI_RANK_FIRST )
     {
-        offset += (size_N + 2) * (size_M + 2);
+        load_size += M+2;
+        load_offset = 0;
     }
-    MPI_File_write_at_all(out, offset, temp[0], (size_N + 2) * (size_M + 2), MPI_INT, MPI_STATUS_IGNORE);
-    // fwrite(temp[0], sizeof(real_t), (N + 2) * (M + 2), out);
-    printf("Writing Rank %d iteration %d, %s\n", rank, offset, filename);
-    MPI_File_close(&out);
+    if ( MPI_RANK_LAST )
+    {
+        load_size += M+2;
+    }
+
+    MPI_File_write_ordered (
+        out,
+        temp[0] + load_offset,
+        load_size,
+        MPI_DOUBLE,
+        MPI_STATUS_IGNORE
+    );
+
+    MPI_File_close ( &out );
 }
 
-void domain_finalize(void)
+
+void
+domain_finalize ( void )
 {
-    free(temp[0]);
-    free(temp[1]);
-    free(thermal_diffusivity);
+    free ( temp[0] );
+    free ( temp[1] );
+    free ( thermal_diffusivity );
 }
