@@ -5,7 +5,7 @@
 #include <unistd.h>
 #include <math.h>
 #include <sys/time.h>
-
+#include <pthread.h>
 #include "../inc/argument_utils.h"
 
 // Convert 'struct timeval' into seconds in double prec. floating point
@@ -35,6 +35,7 @@ void border_exchange( void );
 void domain_init ( void );
 void domain_save ( int_t iteration );
 void domain_finalize ( void );
+void app(void);
 
 
 void
@@ -62,6 +63,14 @@ main ( int argc, char **argv )
     max_iteration = options->max_iteration;
     snapshot_frequency = options->snapshot_frequency;
 
+    pthread_t single_thread;
+    pthread_create(&single_thread, NULL, &app, NULL);
+    pthread_join(single_thread, NULL);
+
+    exit ( EXIT_SUCCESS );
+}
+
+void app(void) {
     domain_init();
 
     struct timeval t_start, t_end;
@@ -95,8 +104,6 @@ main ( int argc, char **argv )
 
 
     domain_finalize();
-
-    exit ( EXIT_SUCCESS );
 }
 
 
