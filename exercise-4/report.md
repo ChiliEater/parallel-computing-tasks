@@ -42,4 +42,16 @@ return 0;
 
 Of course, this could also be extracted into a seperate function with the thread index as an argument.
 
+## Stats & Speedups
+
+All tests ran on an i7-8705G (8 threads)
+
+|Program|Time|Comment|
+|-|-|-|
+|Sequential|73.9 s|Slow, as expected. Easy to debug though!|
+|Pthreads (4 threads)|39.7 s|~1.8x improvement. Not as good as I hoped, likely because I used a lot of barriers in the main loop.|
+|Pthreads (8 threads)|38.8 s|No improvement, probably because the OS is busy with other stuff|
+|OMP|108.4 s|This was *very* surprising but ultimately to be expected. There's no way that the OS will just let our application hog the entire CPU. While waiting I observed that the programm actually used about 6 threads on average. This creates a *lot* of idle waiting due to barriers and such.|
+|OMP (4 threads override)|34.9 s|Reducing the thread count to 4 gives a nice performance boost!|
+
 <div style="break-after:page"></div>

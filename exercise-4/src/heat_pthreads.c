@@ -11,7 +11,7 @@
 
 // Convert 'struct timeval' into seconds in double prec. floating point
 #define WALLTIME(t) ((double)(t).tv_sec + 1e-6 * (double)(t).tv_usec)
-#define THREAD_COUNT 4
+#define THREAD_COUNT 8
 #define RANK_FIRST (info->id == 0)
 #define RANK_LAST (info->id == THREAD_COUNT - 1)
 
