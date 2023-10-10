@@ -11,7 +11,7 @@
 
 // Convert 'struct timeval' into seconds in double prec. floating point
 #define WALLTIME(t) ((double)(t).tv_sec + 1e-6 * (double)(t).tv_usec)
-#define THREAD_COUNT 4
+#define THREAD_COUNT 8
 #define RANK_FIRST (info->id == 0)
 #define RANK_LAST (info->id == THREAD_COUNT - 1)
 
@@ -24,9 +24,10 @@ int_t
     max_iteration,
     snapshot_frequency;
 
-real_t* boundary_buffer[THREAD_COUNT * 2];
+real_t *boundary_buffer[THREAD_COUNT * 2];
 
-typedef struct {
+typedef struct
+{
     int_t id;
     int_t offset;
     int_t local_N;
@@ -42,13 +43,13 @@ pthread_mutex_t file_lock;
 #define T_next(x, y) info->temp[1][((y) * (info->local_N + 2) + (x))]
 #define THERMAL_DIFFUSIVITY(x, y) info->thermal_diffusivity[(y) * (info->local_N + 2) + (x)]
 
-void time_step(thread_info*);
-void boundary_condition(thread_info*);
-void border_exchange(thread_info*);
-void domain_init(thread_info*);
-void domain_save(int_t, thread_info*);
-void domain_finalize(thread_info*);
-void app(thread_info*);
+void time_step(thread_info *);
+void boundary_condition(thread_info *);
+void border_exchange(thread_info *);
+void domain_init(thread_info *);
+void domain_save(int_t, thread_info *);
+void domain_finalize(thread_info *);
+void app(thread_info *);
 
 void swap(real_t **m1, real_t **m2)
 {
@@ -76,9 +77,10 @@ int main(int argc, char **argv)
     pthread_mutex_init(&file_lock, NULL);
 
     pthread_t threads[THREAD_COUNT];
-    for (int_t i = 0; i < THREAD_COUNT; i++) {
-        thread_info* info = malloc(sizeof(thread_info));
-        *info = (thread_info) {
+    for (int_t i = 0; i < THREAD_COUNT; i++)
+    {
+        thread_info *info = malloc(sizeof(thread_info));
+        *info = (thread_info){
             i,
             N / THREAD_COUNT * i,
             N / THREAD_COUNT,
@@ -86,23 +88,27 @@ int main(int argc, char **argv)
             NULL,
             0.0,
         };
-        //printf("%d: %x\n", i, *info);
+        // printf("%d: %x\n", i, *info);
         pthread_create(&threads[i], NULL, &app, info);
     }
 
-    for (int_t i = 0; i < THREAD_COUNT; i++) {
+    for (int_t i = 0; i < THREAD_COUNT; i++)
+    {
         pthread_join(threads[i], NULL);
     }
+
+    pthread_mutex_destroy(&file_lock);
+    pthread_barrier_destroy(&barrier);
 
     printf("Done!\n");
 
     exit(EXIT_SUCCESS);
 }
 
-void app(thread_info* info) {
-    //printf("%d ready\n", info->local_N);
+void app(thread_info *info)
+{
+    printf("%d ready\n", info->id);
     domain_init(info);
-    border_exchange(info);
 
     struct timeval t_start, t_end;
     gettimeofday(&t_start, NULL);
@@ -111,16 +117,18 @@ void app(thread_info* info) {
     {
         border_exchange(info);
         boundary_condition(info);
-
         time_step(info);
 
         if (iteration % snapshot_frequency == 0)
         {
-            printf(
-                "Iteration %ld of %ld (%.2lf%% complete)\n",
-                iteration,
-                max_iteration,
-                100.0 * (real_t)iteration / (real_t)max_iteration);
+            if (RANK_LAST)
+            {
+                printf(
+                    "Iteration %ld of %ld (%.2lf%% complete)\n",
+                    iteration,
+                    max_iteration,
+                    100.0 * (real_t)iteration / (real_t)max_iteration);
+            }
 
             domain_save(iteration, info);
         }
@@ -135,25 +143,28 @@ void app(thread_info* info) {
     domain_finalize(info);
 }
 
-void border_exchange(thread_info* info) {
-    //printf("%d: %d\n", info->id, info->id - 1 + (info->id % 2 * 2));
+void border_exchange(thread_info *info)
+{
+    // printf("%d: %d\n", info->id, info->id - 1 + (info->id % 2 * 2));
     boundary_buffer[info->id * 2] = &T(0, 1);
     boundary_buffer[info->id * 2 + 1] = &T(info->local_N, 1);
-    
+
     pthread_barrier_wait(&barrier);
 
-    if (info->id > 0) {
-        // Copy from left
-        memcpy(&T(0,0), boundary_buffer[info->id * 2 - 1], (M + 2) * sizeof(real_t));
+    if (!RANK_FIRST)
+    {
+        // Copy from up?
+        memcpy(&T(0, 0), boundary_buffer[info->id * 2 - 1], (M + 2) * sizeof(real_t));
     }
 
-    if (info->id < THREAD_COUNT - 1) {
-        // Copy from right
-        memcpy(&T(info->local_N+1,1), boundary_buffer[info->id * 2 + 2], (M + 2) * sizeof(real_t));
+    if (!RANK_LAST)
+    {
+        // Copy from down?
+        memcpy(&T(info->local_N + 1, 1), boundary_buffer[info->id * 2 + 2], (M + 2) * sizeof(real_t));
     }
 }
 
-void time_step(thread_info* info)
+void time_step(thread_info *info)
 {
     real_t c, t, b, l, r, K, new_value;
 
@@ -176,22 +187,34 @@ void time_step(thread_info* info)
     }
 }
 
-void boundary_condition(thread_info* info)
+void boundary_condition(thread_info *info)
 {
     for (int_t x = 1; x <= info->local_N; x++)
     {
         T(x, 0) = T(x, 2);
+    }
+    for (int_t x = 1; x <= info->local_N; x++)
+    {
         T(x, M + 1) = T(x, M - 1);
     }
 
-    for (int_t y = 1; y <= M; y++)
+    if (RANK_FIRST)
     {
-        T(0, y) = T(2, y);
-        T(info->local_N + 1, y) = T(info->local_N - 1, y);
+        for (int_t y = 1; y <= M; y++)
+        {
+            T(0, y) = T(2, y);
+        }
+    }
+    if (RANK_LAST)
+    {
+        for (int_t y = 1; y <= M; y++)
+        {
+            T(info->local_N + 1, y) = T(info->local_N - 1, y);
+        }
     }
 }
 
-void domain_init(thread_info* info)
+void domain_init(thread_info *info)
 {
     info->temp[0] = malloc((M + 2) * (info->local_N + 2) * sizeof(real_t));
     info->temp[1] = malloc((M + 2) * (info->local_N + 2) * sizeof(real_t));
@@ -203,7 +226,7 @@ void domain_init(thread_info* info)
     {
         for (int_t x = 1; x <= info->local_N; x++)
         {
-            real_t temperature = 30 + 30 * sin((x + y) / 20.0);
+            real_t temperature = 30 + 30 * sin((info->offset + x + y) / 20.0);
             real_t diffusivity = 0.05 + (30 + 30 * sin((N - (x + info->offset) + y) / 20.0)) / 605.0;
 
             T(x, y) = temperature;
@@ -213,19 +236,15 @@ void domain_init(thread_info* info)
     }
 }
 
-void domain_save(int_t iteration, thread_info* info)
+void domain_save(int_t iteration, thread_info *info)
 {
     int_t index = iteration / snapshot_frequency;
     char filename[256];
     memset(filename, 0, 256 * sizeof(char));
     sprintf(filename, "data/%.5ld.bin", index);
-    int_t load_offset = M+2;
-    int_t load_size = info->local_N*(M+2);
-
     pthread_mutex_lock(&file_lock);
 
     FILE *out = fopen(filename, "a");
-    fseek(out, load_size * info->id, SEEK_SET);
     if (!out)
     {
         fprintf(stderr, "Failed to open file: %s\n", filename);
@@ -233,25 +252,27 @@ void domain_save(int_t iteration, thread_info* info)
         exit(1);
     }
 
+    int_t load_offset = M + 2;
+    int_t load_size = info->local_N * (M + 2);
 
-    if ( RANK_FIRST )
+    if (RANK_FIRST)
     {
-        load_size += M+2;
+        load_size += M + 2;
         load_offset = 0;
     }
-    if ( RANK_LAST )
+    if (RANK_LAST)
     {
-        load_size += M+2;
+        load_size += M + 2;
     }
 
-
+    fseek(out, load_size * info->id, SEEK_SET);
     fwrite(info->temp[0] + load_offset, sizeof(real_t), load_size, out);
     fclose(out);
 
     pthread_mutex_unlock(&file_lock);
 }
 
-void domain_finalize(thread_info* info)
+void domain_finalize(thread_info *info)
 {
     free(info->temp[0]);
     free(info->temp[1]);
