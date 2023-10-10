@@ -12,6 +12,8 @@
 // Convert 'struct timeval' into seconds in double prec. floating point
 #define WALLTIME(t) ((double)(t).tv_sec + 1e-6 * (double)(t).tv_usec)
 #define THREAD_COUNT 4
+#define RANK_FIRST (info->id == 0)
+#define RANK_LAST (info->id == THREAD_COUNT - 1)
 
 typedef int64_t int_t;
 typedef double real_t;
@@ -135,19 +137,19 @@ void app(thread_info* info) {
 
 void border_exchange(thread_info* info) {
     //printf("%d: %d\n", info->id, info->id - 1 + (info->id % 2 * 2));
-    boundary_buffer[info->id * 2] = &T(1, 1);
+    boundary_buffer[info->id * 2] = &T(0, 1);
     boundary_buffer[info->id * 2 + 1] = &T(info->local_N, 1);
     
     pthread_barrier_wait(&barrier);
 
     if (info->id > 0) {
         // Copy from left
-        memcpy(&T(0,1), boundary_buffer[info->id * 2 - 1], info->local_N * sizeof(real_t));
+        memcpy(&T(0,0), boundary_buffer[info->id * 2 - 1], (M + 2) * sizeof(real_t));
     }
 
     if (info->id < THREAD_COUNT - 1) {
         // Copy from right
-        memcpy(&T(info->local_N+1,1), boundary_buffer[info->id * 2 + 2], info->local_N * sizeof(real_t));
+        memcpy(&T(info->local_N+1,1), boundary_buffer[info->id * 2 + 2], (M + 2) * sizeof(real_t));
     }
 }
 
@@ -202,7 +204,7 @@ void domain_init(thread_info* info)
         for (int_t x = 1; x <= info->local_N; x++)
         {
             real_t temperature = 30 + 30 * sin((x + y) / 20.0);
-            real_t diffusivity = 0.05 + (30 + 30 * sin((N - x - info->offset + y) / 20.0)) / 605.0;
+            real_t diffusivity = 0.05 + (30 + 30 * sin((N - (x + info->offset) + y) / 20.0)) / 605.0;
 
             T(x, y) = temperature;
             T_next(x, y) = temperature;
@@ -217,11 +219,13 @@ void domain_save(int_t iteration, thread_info* info)
     char filename[256];
     memset(filename, 0, 256 * sizeof(char));
     sprintf(filename, "data/%.5ld.bin", index);
+    int_t load_offset = M+2;
+    int_t load_size = info->local_N*(M+2);
 
     pthread_mutex_lock(&file_lock);
 
     FILE *out = fopen(filename, "a");
-    fseek(out, (info->local_N+2) * (M+2) * info->id, SEEK_SET);
+    fseek(out, load_size * info->id, SEEK_SET);
     if (!out)
     {
         fprintf(stderr, "Failed to open file: %s\n", filename);
@@ -229,7 +233,19 @@ void domain_save(int_t iteration, thread_info* info)
         exit(1);
     }
 
-    fwrite(info->temp[0], sizeof(real_t), (info->local_N+2) * (M+2), out);
+
+    if ( RANK_FIRST )
+    {
+        load_size += M+2;
+        load_offset = 0;
+    }
+    if ( RANK_LAST )
+    {
+        load_size += M+2;
+    }
+
+
+    fwrite(info->temp[0] + load_offset, sizeof(real_t), load_size, out);
     fclose(out);
 
     pthread_mutex_unlock(&file_lock);
