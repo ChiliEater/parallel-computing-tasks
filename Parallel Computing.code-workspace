@@ -16,6 +16,9 @@
         {
             "path": "./exercise-4",
         },
+        {
+            "path": "./exercise-5",
+        },
     ],
     "launch": {
         "version": "0.2.0",
@@ -113,6 +116,26 @@
                 "cwd": "${workspaceFolder:exercise-4}",
                 "preLaunchTask": "make-omp",
                 
+            },
+            {
+                "type": "lldb",
+                "request": "launch",
+                "name": "Launch Exercise 5: CUDA",
+                "program": "${workspaceFolder:exercise-5}/parallel",
+                "args": [
+                ],
+                "cwd": "${workspaceFolder:exercise-5}",
+                "preLaunchTask": "make",
+            },
+            {
+                "type": "lldb",
+                "request": "launch",
+                "name": "Launch Exercise 5: Sequential",
+                "program": "${workspaceFolder:exercise-5}/sequential",
+                "args": [
+                ],
+                "cwd": "${workspaceFolder:exercise-5}",
+                "preLaunchTask": "make-sequential",
             },
         ],
         "compounds": []
