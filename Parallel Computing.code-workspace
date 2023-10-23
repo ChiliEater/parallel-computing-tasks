@@ -203,7 +203,8 @@
             "string.h": "c",
             "format": "c",
             "__locale": "c",
-            "source_location": "c"
+            "source_location": "c",
+            "cstdlib": "c"
         }
     },
     "tasks": {

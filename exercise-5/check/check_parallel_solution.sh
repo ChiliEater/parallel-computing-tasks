@@ -1,3 +1,4 @@
+#!/bin/bash
 echo
 echo "--------------------------------------------------------------------------------"
 echo "Comparing parallel solution with reference data"

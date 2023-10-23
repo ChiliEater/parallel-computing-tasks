@@ -1,3 +1,4 @@
+#!/bin/bash
 echo
 echo "--------------------------------------------------------------------------------"
 echo "Comparing sequential solution with reference data"
