@@ -88,8 +88,8 @@ int main(int argc, char **argv)
     struct timeval t_start, t_end;
     gettimeofday(&t_start, NULL);
 
-    dim3 threadBlockDims = {MAX_THREADS, 1, 1};
-    dim3 gridDims = {ceil(N_ITEMS / MAX_THREADS), 1, 1};
+    dim3 threadBlockDims = {32, 32, 1};
+    dim3 gridDims = {(int)ceil(N / 32), (int)ceil(M / 32), 1};
 
     for (int_t iteration = 0; iteration <= max_iteration; iteration++)
     {
@@ -234,5 +234,9 @@ void domain_finalize(void)
     free(h_temp[1]);
     free(h_thermal_diffusivity);
 
-    // TODO 9: Free device memory.
+    // Free device memory.
+    cudaFree(&d_temp);
+    cudaFree(&d_temp_next);
+    cudaFree(&d_thermal_diffusivity);
+
 }
