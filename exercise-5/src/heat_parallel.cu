@@ -5,7 +5,7 @@
 #include <unistd.h>
 #include <math.h>
 #include <sys/time.h>
-#include <cuda_runtime.h>
+#include <cuda.h>
 #include "../inc/argument_utils.h"
 
 // Convert 'struct timeval' into seconds in double prec. floating point
@@ -24,6 +24,8 @@ int_t
     N,
     max_iteration,
     snapshot_frequency;
+
+cudaError_t gpu_error;
 
 real_t
     *h_temp[2] = {NULL, NULL},
@@ -55,8 +57,8 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort =
     }
 }
 
-__global__ void time_step(real_t*, real_t*, real_t*, int_t, int_t);
-__device__ void boundary_condition(real_t*, real_t*, int, int, int, int, int, int);
+__global__ void time_step(real_t *, real_t *, real_t *, int_t, int_t);
+__device__ void boundary_condition(real_t *, real_t *, int, int, int, int);
 void domain_init(void);
 void domain_save(int_t iteration);
 void domain_finalize(void);
@@ -88,14 +90,16 @@ int main(int argc, char **argv)
     struct timeval t_start, t_end;
     gettimeofday(&t_start, NULL);
 
+    // 32 x 32 = 1024 which is the max per block
     dim3 threadBlockDims = {32, 32, 1};
-    dim3 gridDims = {(int)ceil(N / 32), (int)ceil(M / 32), 1};
+    // Split the domain into 32-large chunks and round up to capture everything
+    dim3 gridDims = {ceil(N / 32), ceil(M / 32), 1};
 
     for (int_t iteration = 0; iteration <= max_iteration; iteration++)
     {
         // Launch the time_step-kernel.
         time_step<<<gridDims, threadBlockDims>>>(d_temp, d_temp_next, d_thermal_diffusivity, N, M);
-
+        cudaDeviceSynchronize(); // Is this even necessary???
         if (iteration % snapshot_frequency == 0)
         {
             printf(
@@ -105,12 +109,13 @@ int main(int argc, char **argv)
                 100.0 * (real_t)iteration / (real_t)max_iteration);
 
             // Copy data from device to host.
-            cudaMemcpy(&h_temp[0], &d_temp, (M + 2) * (N + 2), DOWNLOAD);
-            cudaMemcpy(&h_temp[1], &d_temp_next, (M + 2) * (N + 2), DOWNLOAD);
+            gpu_error = cudaMemcpy(h_temp[0], d_temp, (M + 2) * (N + 2) * sizeof(real_t), DOWNLOAD);
+            cudaErrorCheck(gpu_error);
+            gpu_error = cudaMemcpy(h_temp[1], d_temp_next, (M + 2) * (N + 2) * sizeof(real_t), DOWNLOAD);
+            cudaErrorCheck(gpu_error);
+
             domain_save(iteration);
         }
-
-        // swap( &h_temp[0], &h_temp[1] );
         //  Swap device pointers.
         swap(&d_temp, &d_temp_next);
     }
@@ -133,45 +138,60 @@ __global__ void time_step(
     int_t N,
     int_t M)
 {
-    int local_x = blockDim.x * blockIdx.x + threadIdx.x;
-    int local_y = blockDim.y * blockIdx.y + threadIdx.y;
-    int local_N = blockDim.x + local_x;
-    int local_M = blockDim.y + local_y;
-    boundary_condition(temp, temp_next, local_x, local_y, local_N, local_M, N, M);
+    // From slides, should work fine, right?
+    int x = blockDim.x * blockIdx.x + threadIdx.x;
+    int y = blockDim.y * blockIdx.y + threadIdx.y;
+
+    // This *should* stop threads that are outside our domain
+    // i.e. counteracting the rounding we do in main
+    if (x > (N + 1) || y > (M + 1))
+        return;
+
+    boundary_condition(temp, temp_next, x, y, N, M);
+    
+    // Should this be here?
+    //if (x == 0 || y == 0)
+    //    return;
+
     real_t c, t, b, l, r, K, new_value;
+    // Probably should define this as a constant
     real_t dt = 0.1;
-    for (int_t y = local_y; y <= local_M; y++)
-    {
-        for (int_t x = local_x; x <= local_N; x++)
-        {
-            c = d_T(x, y);
-            t = d_T(x - 1, y);
-            b = d_T(x + 1, y);
-            l = d_T(x, y - 1);
-            r = d_T(x, y + 1);
-            K = d_THERMAL_DIFFUSIVITY(x, y);
 
-            new_value = c + K * dt * ((l - 2 * c + r) + (b - 2 * c + t));
+    c = d_T(x, y);
+    t = d_T(x - 1, y);
+    b = d_T(x + 1, y);
+    l = d_T(x, y - 1);
+    r = d_T(x, y + 1);
+    K = d_THERMAL_DIFFUSIVITY(x, y);
 
-            d_T_next(x, y) = new_value;
-        }
-    }
+    new_value = c + K * dt * ((l - 2 * c + r) + (b - 2 * c + t));
+
+    d_T_next(x, y) = new_value;
 }
 
 // Make boundary_condition() a device function and
 //         call it from the time_step-kernel.
 //         Chose appropriate threads to set the boundary values.
-__device__ void boundary_condition(real_t *temp, real_t *temp_next, int local_x, int local_y, int local_N, int local_M, int N, int M)
+__device__ void boundary_condition(real_t *temp, real_t *temp_next, int x, int y, int N, int M)
 {
-    for (int_t x = local_x; x <= local_N; x++)
+    // Top row
+    if (y == 0)
     {
         d_T(x, 0) = d_T(x, 2);
+    }
+    // Bottom row
+    if (y == M + 1)
+    {
         d_T(x, M + 1) = d_T(x, M - 1);
     }
-
-    for (int_t y = local_y; y <= local_M; y++)
+    // Leftmost column
+    if (x == 0)
     {
         d_T(0, y) = d_T(2, y);
+    }
+    // Rightmost column
+    if (x == N + 1)
+    {
         d_T(N + 1, y) = d_T(N - 1, y);
     }
 }
@@ -183,9 +203,12 @@ void domain_init(void)
     h_thermal_diffusivity = (real_t *)malloc((M + 2) * (N + 2) * sizeof(real_t));
 
     // Allocate device memory.
-    cudaMalloc(&d_temp, (M + 2) * (N + 2) * sizeof(real_t));
-    cudaMalloc(&d_temp_next, (M + 2) * (N + 2) * sizeof(real_t));
-    cudaMalloc(&d_thermal_diffusivity, (M + 2) * (N + 2) * sizeof(real_t));
+    gpu_error = cudaMalloc(&d_temp, (M + 2) * (N + 2) * sizeof(real_t));
+    cudaErrorCheck(gpu_error);
+    gpu_error = cudaMalloc(&d_temp_next, (M + 2) * (N + 2) * sizeof(real_t));
+    cudaErrorCheck(gpu_error);
+    gpu_error = cudaMalloc(&d_thermal_diffusivity, (M + 2) * (N + 2) * sizeof(real_t));
+    cudaErrorCheck(gpu_error);
 
     dt = 0.1;
 
@@ -201,11 +224,13 @@ void domain_init(void)
             h_thermal_diffusivity[y * (N + 2) + x] = diffusivity;
         }
     }
-
     // Copy data from host to device.
-    cudaMemcpy(&d_temp, &h_temp[0], (M + 2) * (N + 2), UPLOAD);
-    cudaMemcpy(&d_temp_next, &h_temp[1], (M + 2) * (N + 2), UPLOAD);
-    cudaMemcpy(&d_thermal_diffusivity, &h_thermal_diffusivity, (M + 2) * (N + 2), UPLOAD);
+    gpu_error = cudaMemcpy(d_temp, h_temp[0], (M + 2) * (N + 2) * sizeof(real_t), UPLOAD);
+    cudaErrorCheck(gpu_error);
+    gpu_error = cudaMemcpy(d_temp_next, h_temp[1], (M + 2) * (N + 2) * sizeof(real_t), UPLOAD);
+    cudaErrorCheck(gpu_error);
+    gpu_error = cudaMemcpy(d_thermal_diffusivity, h_thermal_diffusivity, (M + 2) * (N + 2) * sizeof(real_t), UPLOAD);
+    cudaErrorCheck(gpu_error);
 }
 
 void domain_save(int_t iteration)
@@ -238,5 +263,4 @@ void domain_finalize(void)
     cudaFree(&d_temp);
     cudaFree(&d_temp_next);
     cudaFree(&d_thermal_diffusivity);
-
 }
