@@ -19,6 +19,9 @@
         {
             "path": "./exercise-5",
         },
+        {
+            "path": "./exercise-6",
+        },
     ],
     "launch": {
         "version": "0.2.0",
@@ -135,6 +138,26 @@
                 "args": [
                 ],
                 "cwd": "${workspaceFolder:exercise-5}",
+                "preLaunchTask": "make-sequential",
+            },
+            {
+                "type": "lldb",
+                "request": "launch",
+                "name": "Launch Exercise 6: CUDA",
+                "program": "${workspaceFolder:exercise-6}/parallel",
+                "args": [
+                ],
+                "cwd": "${workspaceFolder:exercise-6}",
+                "preLaunchTask": "make",
+            },
+            {
+                "type": "lldb",
+                "request": "launch",
+                "name": "Launch Exercise 6: Sequential",
+                "program": "${workspaceFolder:exercise-6}/sequential",
+                "args": [
+                ],
+                "cwd": "${workspaceFolder:exercise-6}",
                 "preLaunchTask": "make-sequential",
             },
         ],
