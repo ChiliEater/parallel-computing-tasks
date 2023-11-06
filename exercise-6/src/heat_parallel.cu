@@ -19,6 +19,9 @@ namespace cg = cooperative_groups;
 #define GPU2GPU cudaMemcpyDeviceToDevice
 #define N_ITEMS (M + 2) * (N + 2)
 #define MAX_THREADS 1024
+#define THREAD_X blockDim.x * blockIdx.x + threadIdx.x
+#define THREAD_Y blockDim.y * blockIdx.y + threadIdx.y
+#define OUT_OF_BOUNDS (x > N || y > M || x == 0 || y == 0)
 
 typedef int64_t int_t;
 typedef double real_t;
@@ -41,8 +44,8 @@ cudaError_t gpu_error;
 
 #define T(x, y) h_temp[(y) * (N + 2) + (x)]
 #define THERMAL_DIFFUSIVITY(x, y) h_thermal_diffusivity[(y) * (N + 2) + (x)]
-#define d_T(x, y) d_temp[(y) * (N + 2) + (x)]
-#define d_THERMAL_DIFFUSIVITY(x, y) d_thermal_diffusivity[(y) * (N + 2) + (x)]
+#define d_T(x, y) temp[(y) * (N + 2) + (x)]
+#define d_THERMAL_DIFFUSIVITY(x, y) thermal_diffusivity[(y) * (N + 2) + (x)]
 
 #define cudaErrorCheck(ans)                   \
     {                                         \
@@ -58,8 +61,8 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort =
     }
 }
 
-void time_step();
-void boundary_condition();
+__global__ void time_step(real_t *, real_t *, int_t, int_t, real_t);
+__device__ void boundary_condition(real_t *, int_t, int_t);
 void domain_init(void);
 void domain_save(int_t iteration);
 void domain_finalize(void);
@@ -83,9 +86,25 @@ int main(int argc, char **argv)
     struct timeval t_start, t_end;
     gettimeofday(&t_start, NULL);
 
+    // 32 x 32 = 1024 which is the max per block
+    dim3 threadBlockDims = {32, 32, 1};
+    // Split the domain into 32-large chunks and round up to capture everything
+    dim3 gridDims = {
+        (unsigned int) ceil((double) N+2 / (double) 32), 
+        (unsigned int) ceil((double) M+2 / (double) 32), 
+        1
+    };
+
     for (int_t iteration = 0; iteration <= max_iteration; iteration++)
     {
-        // TODO 6: Launch the cooperative time_step-kernel.
+        // Launch the cooperative time_step-kernel.
+        void *gpu_args[] = {
+            (void *)&d_temp,
+            (void *)&d_thermal_diffusivity,
+            (void *)&N,
+            (void *)&M,
+            (void *)&dt};
+        cudaLaunchCooperativeKernel((void *)time_step, gridDims, threadBlockDims, gpu_args);
 
         if (iteration % snapshot_frequency == 0)
         {
@@ -95,8 +114,9 @@ int main(int argc, char **argv)
                 max_iteration,
                 100.0 * (real_t)iteration / (real_t)max_iteration);
 
-            // TODO 7: Copy data from device to host.
-
+            // Copy data from device to host.
+            gpu_error = cudaMemcpy(h_temp, d_temp, (M + 2) * (N + 2) * sizeof(real_t), DOWNLOAD);
+            cudaErrorCheck(gpu_error);
             domain_save(iteration);
         }
     }
@@ -110,73 +130,83 @@ int main(int argc, char **argv)
     exit(EXIT_SUCCESS);
 }
 
-// TODO 4: Make time_step() a cooperative CUDA kernel
-//         where one thread is responsible for one grid point.
-void time_step()
+// TODO 4: Make time_step() a cooperative CUDA kernel where one thread is responsible for one grid point.
+__global__ void time_step(
+    real_t *temp,
+    real_t *thermal_diffusivity,
+    int_t N,
+    int_t M,
+    real_t dt)
 {
+    cg::grid_group grid = cg::this_grid();
     real_t c, t, b, l, r, K, A, D, new_value;
+    int x = THREAD_X;
+    int y = THREAD_Y;
 
-    for (int_t y = 1; y <= M; y++)
+    boundary_condition(temp, N, M);
+
+    // Part one
+    bool is_red = (x % 2) != (y % 2);
+
+    if (is_red || !OUT_OF_BOUNDS)
     {
-        int res = y % 2;
-        for (int_t x = 1 + res; x <= N; x += 2)
-        {
-            c = T(x, y);
+        c = d_T(x, y);
 
-            t = T(x - 1, y);
-            b = T(x + 1, y);
-            l = T(x, y - 1);
-            r = T(x, y + 1);
-            K = THERMAL_DIFFUSIVITY(x, y);
+        t = d_T(x - 1, y);
+        b = d_T(x + 1, y);
+        l = d_T(x, y - 1);
+        r = d_T(x, y + 1);
+        K = d_THERMAL_DIFFUSIVITY(x, y);
 
-            A = -K * dt;
-            D = 1.0f + 4.0f * K * dt;
+        A = -K * dt;
+        D = 1.0f + 4.0f * K * dt;
 
-            new_value = (c - A * (t + b + l + r)) / D;
+        new_value = (c - A * (t + b + l + r)) / D;
 
-            T(x, y) = new_value;
-        }
+        d_T(x, y) = new_value;
     }
 
-    for (int_t y = 1; y <= M; y++)
+    grid.sync();
+
+    // Part two
+    if (!is_red || !OUT_OF_BOUNDS)
     {
-        int res = (y + 1) % 2;
-        for (int_t x = 1 + res; x <= N; x += 2)
-        {
-            c = T(x, y);
+        c = d_T(x, y);
 
-            t = T(x - 1, y);
-            b = T(x + 1, y);
-            l = T(x, y - 1);
-            r = T(x, y + 1);
-            K = THERMAL_DIFFUSIVITY(x, y);
+        t = d_T(x - 1, y);
+        b = d_T(x + 1, y);
+        l = d_T(x, y - 1);
+        r = d_T(x, y + 1);
+        K = d_THERMAL_DIFFUSIVITY(x, y);
 
-            A = -K * dt;
-            D = 1.0f + 4.0f * K * dt;
+        A = -K * dt;
+        D = 1.0f + 4.0f * K * dt;
 
-            new_value = (c - A * (t + b + l + r)) / D;
+        new_value = (c - A * (t + b + l + r)) / D;
 
-            T(x, y) = new_value;
-        }
+        d_T(x, y) = new_value;
     }
 }
 
-// TODO 5: Make boundary_condition() a device function and
+// Make boundary_condition() a device function and
 //         call it from the time_step-kernel.
 //         Chose appropriate threads to set the boundary values.
-void boundary_condition()
+__device__ void boundary_condition(
+    real_t *temp,
+    int_t N,
+    int_t M)
 {
-    for (int_t x = 1; x <= N; x++)
-    {
-        T(x, 0) = T(x, 2);
-        T(x, M + 1) = T(x, M - 1);
-    }
+    int x = THREAD_X;
+    int y = THREAD_Y;
 
-    for (int_t y = 1; y <= M; y++)
-    {
-        T(0, y) = T(2, y);
-        T(N + 1, y) = T(N - 1, y);
-    }
+    if (x == 1)
+        d_T(x - 1, y) = d_T(x + 1, y);
+    if (y == 1)
+        d_T(x, y - 1) = d_T(x, y + 1);
+    if (x == N)
+        d_T(x + 1, y) = d_T(x - 1, y);
+    if (y == M)
+        d_T(x, y + 1) = d_T(x, y - 1);
 }
 
 void domain_init(void)
@@ -209,7 +239,6 @@ void domain_init(void)
     cudaErrorCheck(gpu_error);
     gpu_error = cudaMemcpy(d_thermal_diffusivity, h_thermal_diffusivity, (M + 2) * (N + 2) * sizeof(real_t), UPLOAD);
     cudaErrorCheck(gpu_error);
-
 }
 
 void domain_save(int_t iteration)
@@ -237,5 +266,4 @@ void domain_finalize(void)
     // Free device memory.
     cudaFree(&d_temp);
     cudaFree(&d_thermal_diffusivity);
-
 }
