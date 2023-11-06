@@ -227,7 +227,16 @@
             "format": "c",
             "__locale": "c",
             "source_location": "c",
-            "cstdlib": "c"
+            "cstdlib": "c",
+            "chrono": "cpp",
+            "iosfwd": "cpp",
+            "new": "cpp",
+            "numeric": "cpp",
+            "bit": "cpp",
+            "coroutine": "cpp",
+            "numbers": "cpp",
+            "span": "cpp",
+            "system_error": "cpp"
         }
     },
     "tasks": {
