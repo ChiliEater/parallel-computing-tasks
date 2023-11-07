@@ -17,8 +17,6 @@ namespace cg = cooperative_groups;
 #define UPLOAD cudaMemcpyHostToDevice
 #define DOWNLOAD cudaMemcpyDeviceToHost
 #define GPU2GPU cudaMemcpyDeviceToDevice
-#define N_ITEMS (M + 2) * (N + 2)
-#define MAX_THREADS 1024
 #define THREAD_X (blockDim.x * blockIdx.x + threadIdx.x)
 #define THREAD_Y (blockDim.y * blockIdx.y + threadIdx.y)
 #define OUT_OF_BOUNDS (x > N || y > M || x == 0 || y == 0)
@@ -113,7 +111,7 @@ int main(int argc, char **argv)
                 max_iteration,
                 100.0 * (real_t)iteration / (real_t)max_iteration);
 
-            // Copy data from device to host.
+            // Download data from GPU to host.
             gpu_error = cudaMemcpy(h_temp, d_temp, (M + 2) * (N + 2) * sizeof(real_t), DOWNLOAD);
             cudaErrorCheck(gpu_error);
             domain_save(iteration);
@@ -129,7 +127,7 @@ int main(int argc, char **argv)
     exit(EXIT_SUCCESS);
 }
 
-// TODO 4: Make time_step() a cooperative CUDA kernel where one thread is responsible for one grid point.
+// Make time_step() a cooperative CUDA kernel where one thread is responsible for one grid point.
 __global__ void time_step(
     real_t *temp,
     real_t *thermal_diffusivity,
@@ -139,14 +137,16 @@ __global__ void time_step(
 {
     cg::grid_group grid = cg::this_grid();
     real_t c, t, b, l, r, K, A, D, new_value;
+    // Coordinates are off by one
     int x = THREAD_X + 1;
     int y = THREAD_Y + 1;
 
     boundary_condition(temp, N, M);
 
-    // Part one
+    // Is this pixel responsible for red or black?
     bool is_red = (x % 2) != (y % 2);
 
+    // Red part of the algorithm
     if (is_red && !OUT_OF_BOUNDS)
     {
         c = d_T(x, y);
@@ -165,9 +165,10 @@ __global__ void time_step(
         d_T(x, y) = new_value;
     }
 
+    // We have to wait for red to finish
     grid.sync();
 
-    // Part two
+    // Black part of the algorithm
     if (!is_red && !OUT_OF_BOUNDS)
     {
         c = d_T(x, y);
@@ -195,9 +196,11 @@ __device__ void boundary_condition(
     int_t N,
     int_t M)
 {
+    // Coordinates are off by one
     int x = THREAD_X + 1;
     int y = THREAD_Y + 1;
 
+    // This is just like the PS5 suggested solution
     if (x == 1)
         d_T(x - 1, y) = d_T(x + 1, y);
     if (y == 1)
@@ -210,15 +213,17 @@ __device__ void boundary_condition(
 
 void domain_init(void)
 {
+    // Allocate host memory
     h_temp = (real_t *)malloc((M + 2) * (N + 2) * sizeof(real_t));
     h_thermal_diffusivity = (real_t *)malloc((M + 2) * (N + 2) * sizeof(real_t));
 
-    // Allocate device memory.
+    // Allocate GPU memory
     gpu_error = cudaMalloc(&d_temp, (M + 2) * (N + 2) * sizeof(real_t));
     cudaErrorCheck(gpu_error);
     gpu_error = cudaMalloc(&d_thermal_diffusivity, (M + 2) * (N + 2) * sizeof(real_t));
     cudaErrorCheck(gpu_error);
 
+    // Starting data
     dt = 0.1;
 
     for (int_t y = 1; y <= M; y++)
@@ -233,7 +238,7 @@ void domain_init(void)
         }
     }
 
-    // Copy data from host to device.
+    // Upload data from host to GPU
     gpu_error = cudaMemcpy(d_temp, h_temp, (M + 2) * (N + 2) * sizeof(real_t), UPLOAD);
     cudaErrorCheck(gpu_error);
     gpu_error = cudaMemcpy(d_thermal_diffusivity, h_thermal_diffusivity, (M + 2) * (N + 2) * sizeof(real_t), UPLOAD);
@@ -262,7 +267,7 @@ void domain_finalize(void)
     free(h_temp);
     free(h_thermal_diffusivity);
 
-    // Free device memory.
+    // Free GPU memory.
     cudaFree(&d_temp);
     cudaFree(&d_thermal_diffusivity);
 }
