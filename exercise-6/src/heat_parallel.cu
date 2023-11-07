@@ -19,8 +19,8 @@ namespace cg = cooperative_groups;
 #define GPU2GPU cudaMemcpyDeviceToDevice
 #define N_ITEMS (M + 2) * (N + 2)
 #define MAX_THREADS 1024
-#define THREAD_X blockDim.x * blockIdx.x + threadIdx.x
-#define THREAD_Y blockDim.y * blockIdx.y + threadIdx.y
+#define THREAD_X (blockDim.x * blockIdx.x + threadIdx.x)
+#define THREAD_Y (blockDim.y * blockIdx.y + threadIdx.y)
 #define OUT_OF_BOUNDS (x > N || y > M || x == 0 || y == 0)
 
 typedef int64_t int_t;
@@ -90,10 +90,9 @@ int main(int argc, char **argv)
     dim3 threadBlockDims = {32, 32, 1};
     // Split the domain into 32-large chunks and round up to capture everything
     dim3 gridDims = {
-        (unsigned int) ceil((double) N+2 / (double) 32), 
-        (unsigned int) ceil((double) M+2 / (double) 32), 
-        1
-    };
+        (unsigned int)ceil((double)N / (double)32.0),
+        (unsigned int)ceil((double)M / (double)32.0),
+        1};
 
     for (int_t iteration = 0; iteration <= max_iteration; iteration++)
     {
@@ -140,15 +139,15 @@ __global__ void time_step(
 {
     cg::grid_group grid = cg::this_grid();
     real_t c, t, b, l, r, K, A, D, new_value;
-    int x = THREAD_X;
-    int y = THREAD_Y;
+    int x = THREAD_X + 1;
+    int y = THREAD_Y + 1;
 
     boundary_condition(temp, N, M);
 
     // Part one
     bool is_red = (x % 2) != (y % 2);
 
-    if (is_red || !OUT_OF_BOUNDS)
+    if (is_red && !OUT_OF_BOUNDS)
     {
         c = d_T(x, y);
 
@@ -169,7 +168,7 @@ __global__ void time_step(
     grid.sync();
 
     // Part two
-    if (!is_red || !OUT_OF_BOUNDS)
+    if (!is_red && !OUT_OF_BOUNDS)
     {
         c = d_T(x, y);
 
@@ -196,8 +195,8 @@ __device__ void boundary_condition(
     int_t N,
     int_t M)
 {
-    int x = THREAD_X;
-    int y = THREAD_Y;
+    int x = THREAD_X + 1;
+    int y = THREAD_Y + 1;
 
     if (x == 1)
         d_T(x - 1, y) = d_T(x + 1, y);

@@ -65,7 +65,7 @@ plot_parallel: purge run_parallel
 show_sequential: purge run_sequential viz
 show_parallel: purge run_parallel viz
 
-viz:
-	./plot_results.sh > /dev/null
+viz: run_parallel
+	./plot_results.sh
 	ffmpeg -y -i $(PLOTSDIR)%5d.png -vf format=yuv420p $(VIDEODIR)animation.mp4 &> /dev/null
 	./open_video.sh &> /dev/null
